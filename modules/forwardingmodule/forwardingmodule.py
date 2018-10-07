@@ -8,7 +8,7 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.topology import switches
 from ryu.controller import dpset
 
-from ryu.lib.packet import ether_types, packet, ethernet, arp
+from ryu.lib.packet import ether_types, packet, ethernet, arp, ipv4
 
 import modules
 
@@ -17,7 +17,7 @@ CONF = cfg.CONF
 
 from shared import ofprotoHelper
 
-import networkx
+import networkx as nx
 
 class ForwardingModule(app_manager.RyuApp):
     """
@@ -38,11 +38,14 @@ class ForwardingModule(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     opts = [
         cfg.IntOpt('table',
-               default=2,
-               help='Table to use for forwarding'),
+                default=2,
+                help='Table to use for forwarding'),
         cfg.IntOpt('cookie_arp',
                 default=101,
-                help='FLow mod cookie to use for Controller event on arp')
+                help='FLow mod cookie to use for Controller event on arp'),
+        cfg.IntOpt('priority',
+                default=1,
+                help='Priority to use to add the forwarding rules')
     ]
 
     def __init__(self, *args, **kwargs):
@@ -67,26 +70,69 @@ class ForwardingModule(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP)
+        match = parser.OFPMatch()
         actions = [
             parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)
         ]
         self.ofHelper.add_flow(datapath, 0, match, actions, CONF.forwarding.table, CONF.forwarding.cookie_arp)
 
-    def do_packet_out(self, data, datapath, port):
-        """
-        Does a packet out with no buffer
-        :param data: Raw packed data
-        :param datapath: Datapath Object
-        :param port: Port object
-        :return: nothing
-        """
+    def add_forwarding_rule(self, datapath, src_ip, dst_ip, out_port):
         parser = datapath.ofproto_parser
-        ofproto = datapath.ofproto
 
-        actions = [parser.OFPActionOutput(port.port_no)]
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=data)
-        datapath.send_msg(out)
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip, ipv4_dst=dst_ip)
+        actions = [
+            parser.OFPActionOutput(out_port)
+        ]
+        self.ofHelper.add_flow(datapath, CONF.forwarding.priority, match, actions, CONF.forwarding.table)
+
+    def apply_forwarding_path(self, path, src_ip, dst_ip):
+        for rule in path['fw']:
+            if isinstance(rule['src'], int):
+                self.add_forwarding_rule(self.switches.dps[rule['src']], src_ip, dst_ip, rule['port'])
+        for rule in path['bw']:
+            if isinstance(rule['src'], int):
+                self.add_forwarding_rule(self.switches.dps[rule['src']], dst_ip, src_ip, rule['port'])
+
+    def get_shortest_path(self, src_ip, dest_ip):
+        switches = [dp for dp in self.switches.dps]
+        links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
+
+        g = nx.DiGraph()
+        g.add_nodes_from(switches)
+        g.add_edges_from(links)
+
+        for mac, host in self.switches.hosts.iteritems():
+            if dest_ip in host.ipv4:
+                g.add_node(dest_ip)
+                g.add_edge(dest_ip, host.port.dpid)
+                g.add_edge(host.port.dpid, dest_ip, port=host.port.port_no)
+            if src_ip in host.ipv4:
+                g.add_node(src_ip)
+                g.add_edge(src_ip, host.port.dpid)
+                g.add_edge(host.port.dpid, src_ip, port=host.port.port_no)
+
+        try:
+            path = nx.shortest_path(g, src_ip, dest_ip)
+        except nx.NodeNotFound:
+            return None
+
+        edge_data = {'fw': [], 'bw': []}
+
+        for i in range(0, len(path) - 1):
+            edged = g.get_edge_data(path[i], path[i+1])
+            edge_data['fw'].append({
+                'src': path[i],
+                'dst': path[i+1],
+                'port': edged['port'] if 'port' in edged else ''
+            })
+            edged = g.get_edge_data(path[i+1], path[i])
+            edge_data['bw'].append({
+                'src': path[i+1],
+                'dst': path[i],
+                'port': edged['port'] if 'port' in edged else ''
+            })
+
+        return edge_data
 
     @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventForwardingRequest, None)
     def forwardingRequest(self, ev):
@@ -97,13 +143,16 @@ class ForwardingModule(app_manager.RyuApp):
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
         if eth.ethertype == ether_types.ETH_TYPE_ARP:
+            """
+            This part is responsible for handling ARP's, Arps are only recived and sent on access port to eliminiate forwarding loops
+            """
             arpp = pkt.get_protocols(arp.arp)[0]
             if arpp.opcode in [arp.ARP_REQUEST, arp.ARP_REPLY]:
                 self.logger.info('we are looking for %s:%s from %s:%s', arpp.dst_ip, arpp.dst_mac, arpp.src_ip, arpp.src_mac)
                 host = [x for key, x in self.switches.hosts.iteritems() if x.ipv4[0] == arpp.dst_ip]
                 if host:
                     host = host[0]
-                    self.do_packet_out(ev.data, self.switches.dps[host.port.dpid], host.port)
+                    self.ofHelper.do_packet_out(ev.data, self.switches.dps[host.port.dpid], host.port)
                 else:
                     nonAccessPorts = []
                     for link, ts in self.switches.links.iteritems():
@@ -112,17 +161,11 @@ class ForwardingModule(app_manager.RyuApp):
 
                     # Send packet out to all access ports instead of flood
                     for port in accessPorts:
-                        self.do_packet_out(ev.data, self.switches.dps[port.dpid], port)
+                        self.ofHelper.do_packet_out(ev.data, self.switches.dps[port.dpid], port)
+        elif eth.ethertype == ether_types.ETH_TYPE_IP:
+            ip = pkt.get_protocols(ipv4.ipv4)[0]
 
-        else:
-            pass
-            """
-            We are going to make shortest path calculation here and feed the switches with the appropriate flow mods and vice versas
-            No solving topology changes so far
-            
-            feed host A and B to nx graph, feed all switches to NX graph, add links between hosts and swithces and do shortest path
-            """
-
-
-
+            path = self.get_shortest_path(ip.src, ip.dst)
+            if path:
+                self.apply_forwarding_path(path, ip.src, ip.dst)
 

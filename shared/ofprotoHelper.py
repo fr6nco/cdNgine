@@ -31,6 +31,7 @@ class ofProtoHelperGeneric():
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
                                              actions)]
+
         if buffer_id:
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id, cookie=cookie,
                                     priority=priority, match=match, table_id=table_id,
@@ -39,7 +40,23 @@ class ofProtoHelperGeneric():
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, table_id=table_id,
                                     cookie=cookie,
                                     match=match, instructions=inst)
+
         datapath.send_msg(mod)
+
+    def do_packet_out(self, data, datapath, port):
+        """
+        Does a packet out with no buffer
+        :param data: Raw packed data
+        :param datapath: Datapath Object
+        :param port: Port object
+        :return: nothing
+        """
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        actions = [parser.OFPActionOutput(port.port_no)]
+        out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=data)
+        datapath.send_msg(out)
 
     def del_flow_by_cookie(self, datapath, table_id, cookie):
         ofproto = datapath.ofproto
