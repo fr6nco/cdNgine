@@ -15,6 +15,7 @@ CONF = cfg.CONF
 
 from shared import ofprotoHelper
 from modules.db import databaseEvents
+from models import Node, ServiceEngine, RequestRouter
 
 class CDNModule(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -42,11 +43,10 @@ class CDNModule(app_manager.RyuApp):
         self.switches = kwargs['switches']
         self.dpset = kwargs['dpset']
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
-        self.rrs = None
-        self.ses = None
+        self.nodes = None
 
-    def _save_node_state(self, node_type, node_name, datapath_id, port_id):
-        set_node_state_ev = databaseEvents.UpdateNodeInformationEvent(node_type, node_name, datapath_id, port_id)
+    def _save_node_state(self, node):
+        set_node_state_ev = databaseEvents.SetNodeInformationEvent(node)
         self.send_event('DatabaseModule', set_node_state_ev)
 
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
@@ -76,30 +76,19 @@ class CDNModule(app_manager.RyuApp):
         :param ev:
         :return:
         """
-        if not self.rrs:
-            req = databaseEvents.EventDatabaseQuery('rrs')
+        if not self.nodes:
+            req = databaseEvents.EventDatabaseQuery('nodes')
             req.dst = 'DatabaseModule'
-            self.rrs = self.send_request(req).data
-            self.logger.info('Updated Request Router List')
+            self.nodes = self.send_request(req).data
+            self.logger.info('Updated Node List')
 
-        if not self.ses:
-            req = databaseEvents.EventDatabaseQuery('ses')
-            req.dst = 'DatabaseModule'
-            self.ses = self.send_request(req).data
-            self.logger.info('Updated Service Engine list')
-
-        for rr in self.rrs:
-            if rr['ip'] in ev.host.ipv4:
+        for node in self.nodes:
+            if node['ip'] in ev.host.ipv4:
+                n = Node.factory(**node)
                 datapath = self.dpset.get(ev.host.port.dpid)
-                self._install_cdnengine_matching_flow(datapath, rr['ip'], rr['port'])
-                self._save_node_state('rr', rr['name'], ev.host.port.dpid, ev.host.port.port_no)
-                self.logger.info('New RR connected the network. Matching rules were installed')
-
-        for se in self.ses:
-            if se['ip'] in ev.host.ipv4:
-                datapath = self.dpset.get(ev.host.port.dpid)
-                self._install_cdnengine_matching_flow(datapath, se['ip'], se['port'])
-                self._save_node_state('se', se['name'], ev.host.port.dpid, ev.host.port.port_no)
-                self.logger.info('New SE connected the network. Matching rules were installed')
+                self._install_cdnengine_matching_flow(datapath, n.ip, n.port)
+                n.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
+                self._save_node_state(n)
+                self.logger.info('New Node connected the network. Matching rules were installed ' + n.__str__())
 
 

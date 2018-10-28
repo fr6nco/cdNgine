@@ -42,13 +42,9 @@ class DatabaseModule(app_manager.RyuApp):
         repl = databaseEvents.EventDatabaseResponse(self.db[ev.key], ev.src)
         self.reply_to_request(ev, repl)
 
-    @set_ev_cls(modules.db.databaseEvents.UpdateNodeInformationEvent, None)
+    @set_ev_cls(modules.db.databaseEvents.SetNodeInformationEvent, None)
     def setNodeData(self, ev):
-        if ev.node_type in ['se', 'rr']:
-            ev.node_type = ev.node_type + 's'
-
-        for idx, node in enumerate(self.db[ev.node_type]):
-            if node['name'] == ev.node_name:
-                self.db[ev.node_type][idx]['datapath_id'] = ev.datapath_id
-                self.db[ev.node_type][idx]['port_id'] = ev.port_id
-                self.logger.info('Updated node information ' + json.dumps(self.db[ev.node_type][idx]))
+        for idx, node in enumerate(self.db['nodes']):
+            if node['name'] == ev.node.name:
+                self.db['nodes'][idx] = ev.node.serialize()
+        self.logger.debug('Updated node information ' + json.dumps(self.db))
