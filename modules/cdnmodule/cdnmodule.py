@@ -86,8 +86,8 @@ class CDNModule(app_manager.RyuApp):
             if node['ip'] in ev.host.ipv4:
                 n = Node.factory(**node)
                 datapath = self.dpset.get(ev.host.port.dpid)
-                self._install_cdnengine_matching_flow(datapath, n.ip, n.port)
                 n.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
+                self._install_cdnengine_matching_flow(datapath, n.ip, n.port)
                 self._save_node_state(n)
                 self.logger.info('New Node connected the network. Matching rules were installed ' + n.__str__())
 
