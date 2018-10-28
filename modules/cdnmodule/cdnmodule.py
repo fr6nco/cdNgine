@@ -45,6 +45,9 @@ class CDNModule(app_manager.RyuApp):
         self.rrs = None
         self.ses = None
 
+    def _save_node_state(self, node_type, node_name, datapath_id, port_id):
+        set_node_state_ev = databaseEvents.UpdateNodeInformationEvent(node_type, node_name, datapath_id, port_id)
+        self.send_event('DatabaseModule', set_node_state_ev)
 
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
         ofproto = datapath.ofproto
@@ -89,12 +92,14 @@ class CDNModule(app_manager.RyuApp):
             if rr['ip'] in ev.host.ipv4:
                 datapath = self.dpset.get(ev.host.port.dpid)
                 self._install_cdnengine_matching_flow(datapath, rr['ip'], rr['port'])
+                self._save_node_state('rr', rr['name'], ev.host.port.dpid, ev.host.port.port_no)
                 self.logger.info('New RR connected the network. Matching rules were installed')
 
         for se in self.ses:
             if se['ip'] in ev.host.ipv4:
                 datapath = self.dpset.get(ev.host.port.dpid)
                 self._install_cdnengine_matching_flow(datapath, se['ip'], se['port'])
+                self._save_node_state('se', se['name'], ev.host.port.dpid, ev.host.port.port_no)
                 self.logger.info('New SE connected the network. Matching rules were installed')
 
 
