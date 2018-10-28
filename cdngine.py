@@ -34,7 +34,7 @@ Table 2 -> Used by Forwarding module
 """
 class cdNgine(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
-    _EVENTS = [forwardingEvents.EventForwardingRequest]
+    _EVENTS = [forwardingEvents.EventForwardingPipeline]
 
     def __init__(self, *args, **kwargs):
         super(cdNgine, self).__init__(*args, **kwargs)
@@ -71,5 +71,5 @@ class cdNgine(app_manager.RyuApp):
             return
 
         if msg.table_id == CONF.forwarding.table:
-            fwev = forwardingEvents.EventForwardingRequest(datapath, msg.match, msg.data)
+            fwev = forwardingEvents.EventForwardingPipeline(datapath, msg.match, msg.data)
             self.send_event('ForwardingModule', fwev)

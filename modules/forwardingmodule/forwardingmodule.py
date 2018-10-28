@@ -56,9 +56,6 @@ class ForwardingModule(app_manager.RyuApp):
         self.dpset = kwargs['dpset']
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
 
-    def start(self):
-        super(ForwardingModule, self).start()
-
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         """
@@ -134,7 +131,13 @@ class ForwardingModule(app_manager.RyuApp):
 
         return edge_data
 
-    @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventForwardingRequest, None)
+    @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventShortestPathRequest, None)
+    def requestShortestPath(self, ev):
+        path = self.get_shortest_path(ev.src_ip, ev.dst_ip)
+        reply = modules.forwardingmodule.forwardingEvents.EventShortestPathReply(path=path)
+        self.reply_to_request(ev, reply)
+
+    @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventForwardingPipeline, None)
     def forwardingRequest(self, ev):
         datapath = ev.datapath
         match = ev.match
