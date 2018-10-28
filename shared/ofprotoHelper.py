@@ -15,6 +15,9 @@ UINT32_MAX = 0xffffffff
 
 
 class ofProtoHelperGeneric():
+    """
+    Shared module for openflow manipulation
+    """
     def add_goto(self, datapath, priority, match, from_table, to_table):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser

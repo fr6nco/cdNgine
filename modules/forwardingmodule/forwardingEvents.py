@@ -11,7 +11,6 @@ class EventForwardingPipeline(event.EventBase):
         self.match = match
         self.data = data
 
-
 class EventShortestPathRequest(event.EventRequestBase):
     """
     Use this request if we need a shortest path from source ip to dst ip

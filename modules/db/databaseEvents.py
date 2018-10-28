@@ -20,6 +20,9 @@ class EventDatabaseResponse(event.EventReplyBase):
 
 
 class NodeInformationEvent(event.EventBase):
+    """
+    Base Event with node information
+    """
     def __init__(self, node):
         self.node = node
         super(NodeInformationEvent, self).__init__()

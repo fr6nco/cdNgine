@@ -1,5 +1,4 @@
-from ryu.controller import ofp_event
-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
+from ryu.controller.handler import MAIN_DISPATCHER
 from ryu.ofproto import ofproto_v1_3
 from ryu.base import app_manager
 from ryu.topology import switches
@@ -10,12 +9,13 @@ from ryu.controller.handler import set_ev_cls
 from ryu.lib.packet import ether_types
 from ryu.ofproto import inet
 
+from shared import ofprotoHelper
+from modules.db.databaseEvents import EventDatabaseQuery, SetNodeInformationEvent
+from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter
+
 from ryu import cfg
 CONF = cfg.CONF
 
-from shared import ofprotoHelper
-from modules.db import databaseEvents
-from models import Node, ServiceEngine, RequestRouter
 
 class CDNModule(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -46,10 +46,17 @@ class CDNModule(app_manager.RyuApp):
         self.nodes = None
 
     def _save_node_state(self, node):
-        set_node_state_ev = databaseEvents.SetNodeInformationEvent(node)
+        set_node_state_ev = SetNodeInformationEvent(node)
         self.send_event('DatabaseModule', set_node_state_ev)
 
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
+        """
+        Installs flow to match based on IP, port to datapath to send to controller
+        :param datapath: dp_id
+        :param ip: IP of http engine
+        :param port: port of http engine
+        :return:
+        """
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -77,7 +84,7 @@ class CDNModule(app_manager.RyuApp):
         :return:
         """
         if not self.nodes:
-            req = databaseEvents.EventDatabaseQuery('nodes')
+            req = EventDatabaseQuery('nodes')
             req.dst = 'DatabaseModule'
             self.nodes = self.send_request(req).data
             self.logger.info('Updated Node List')

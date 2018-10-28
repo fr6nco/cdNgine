@@ -1,23 +1,20 @@
 from ryu.base import app_manager
-
 from ryu.controller import ofp_event
-from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
-from ryu.controller.handler import set_ev_cls, set_ev_handler
+from ryu.controller.handler import CONFIG_DISPATCHER
+from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
-
 from ryu.topology import switches
 from ryu.controller import dpset
-
 from ryu.lib.packet import ether_types, packet, ethernet, arp, ipv4
 
-import modules
+from shared import ofprotoHelper
+from modules.forwardingmodule.models import Path
+from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathReply, EventShortestPathRequest
+
+import networkx as nx
 
 from ryu import cfg
 CONF = cfg.CONF
-
-from shared import ofprotoHelper
-
-import networkx as nx
 
 class ForwardingModule(app_manager.RyuApp):
     """
@@ -82,15 +79,21 @@ class ForwardingModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.forwarding.priority, match, actions, CONF.forwarding.table)
 
-    def apply_forwarding_path(self, path, src_ip, dst_ip):
-        for rule in path['fw']:
+    def apply_forwarding_path(self, path):
+        """
+        # TODO, Allow generic apply path
+        :param path: Path to apply
+        :type path: Path
+        :return:
+        """
+        for rule in path.fw:
             if isinstance(rule['src'], int):
-                self.add_forwarding_rule(self.switches.dps[rule['src']], src_ip, dst_ip, rule['port'])
-        for rule in path['bw']:
+                self.add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
+        for rule in path.bw:
             if isinstance(rule['src'], int):
-                self.add_forwarding_rule(self.switches.dps[rule['src']], dst_ip, src_ip, rule['port'])
+                self.add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
 
-    def get_shortest_path(self, src_ip, dest_ip):
+    def get_shortest_path(self, src_ip, dst_ip):
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
 
@@ -99,45 +102,45 @@ class ForwardingModule(app_manager.RyuApp):
         g.add_edges_from(links)
 
         for mac, host in self.switches.hosts.iteritems():
-            if dest_ip in host.ipv4:
-                g.add_node(dest_ip)
-                g.add_edge(dest_ip, host.port.dpid)
-                g.add_edge(host.port.dpid, dest_ip, port=host.port.port_no)
+            if dst_ip in host.ipv4:
+                g.add_node(dst_ip)
+                g.add_edge(dst_ip, host.port.dpid)
+                g.add_edge(host.port.dpid, dst_ip, port=host.port.port_no)
             if src_ip in host.ipv4:
                 g.add_node(src_ip)
                 g.add_edge(src_ip, host.port.dpid)
                 g.add_edge(host.port.dpid, src_ip, port=host.port.port_no)
 
         try:
-            path = nx.shortest_path(g, src_ip, dest_ip)
+            nxPath = nx.shortest_path(g, src_ip, dst_ip)
         except nx.NodeNotFound:
             return None
 
-        edge_data = {'fw': [], 'bw': []}
+        path = Path(src_ip, dst_ip)
 
-        for i in range(0, len(path) - 1):
-            edged = g.get_edge_data(path[i], path[i+1])
-            edge_data['fw'].append({
-                'src': path[i],
-                'dst': path[i+1],
+        for i in range(0, len(nxPath) - 1):
+            edged = g.get_edge_data(nxPath[i], nxPath[i+1])
+            path.fw.append({
+                'src': nxPath[i],
+                'dst': nxPath[i+1],
                 'port': edged['port'] if 'port' in edged else ''
             })
-            edged = g.get_edge_data(path[i+1], path[i])
-            edge_data['bw'].append({
-                'src': path[i+1],
-                'dst': path[i],
+            edged = g.get_edge_data(nxPath[i+1], nxPath[i])
+            path.bw.append({
+                'src': nxPath[i+1],
+                'dst': nxPath[i],
                 'port': edged['port'] if 'port' in edged else ''
             })
 
-        return edge_data
+        return path
 
-    @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventShortestPathRequest, None)
+    @set_ev_cls(EventShortestPathRequest, None)
     def requestShortestPath(self, ev):
         path = self.get_shortest_path(ev.src_ip, ev.dst_ip)
-        reply = modules.forwardingmodule.forwardingEvents.EventShortestPathReply(path=path)
+        reply = EventShortestPathReply(path=path, dst=ev.src)
         self.reply_to_request(ev, reply)
 
-    @set_ev_cls(modules.forwardingmodule.forwardingEvents.EventForwardingPipeline, None)
+    @set_ev_cls(EventForwardingPipeline, None)
     def forwardingRequest(self, ev):
         datapath = ev.datapath
         match = ev.match
@@ -162,13 +165,14 @@ class ForwardingModule(app_manager.RyuApp):
                         nonAccessPorts.extend((link.src, link.dst))
                     accessPorts = [port for port, portdata in self.switches.ports.iteritems() if port not in nonAccessPorts]
 
-                    # Send packet out to all access ports instead of flood
+                    # Send packet out to all access ports instead of flood to prevent broadcast loops
                     for port in accessPorts:
                         self.ofHelper.do_packet_out(ev.data, self.switches.dps[port.dpid], port)
         elif eth.ethertype == ether_types.ETH_TYPE_IP:
+            # gets the shortest path between two nodes and installs.
             ip = pkt.get_protocols(ipv4.ipv4)[0]
 
             path = self.get_shortest_path(ip.src, ip.dst)
             if path:
-                self.apply_forwarding_path(path, ip.src, ip.dst)
+                self.apply_forwarding_path(path)
 

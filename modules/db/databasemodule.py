@@ -1,13 +1,13 @@
 from ryu.base import app_manager
-from ryu import cfg
-CONF = cfg.CONF
+from ryu.controller.handler import set_ev_cls
 
-from ryu.controller.handler import set_ev_cls, set_ev_handler
+from modules.db.databaseEvents import EventDatabaseQuery, EventDatabaseResponse, SetNodeInformationEvent
 
 import json
 
-import modules
-from modules.db import databaseEvents
+from ryu import cfg
+CONF = cfg.CONF
+
 
 class DatabaseModule(app_manager.RyuApp):
     """
@@ -37,12 +37,12 @@ class DatabaseModule(app_manager.RyuApp):
         finally:
             self.logger.info('Database file read')
 
-    @set_ev_cls(modules.db.databaseEvents.EventDatabaseQuery, None)
+    @set_ev_cls(EventDatabaseQuery, None)
     def getData(self, ev):
-        repl = databaseEvents.EventDatabaseResponse(self.db[ev.key], ev.src)
+        repl = EventDatabaseResponse(self.db[ev.key], ev.src)
         self.reply_to_request(ev, repl)
 
-    @set_ev_cls(modules.db.databaseEvents.SetNodeInformationEvent, None)
+    @set_ev_cls(SetNodeInformationEvent, None)
     def setNodeData(self, ev):
         for idx, node in enumerate(self.db['nodes']):
             if node['name'] == ev.node.name:

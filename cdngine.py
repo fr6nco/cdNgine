@@ -1,15 +1,12 @@
 from ryu.base import app_manager
-
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-
 from ryu.ofproto import ofproto_v1_3
-
 from ryu.lib.packet import packet, ethernet, ether_types
 
 from shared import ofprotoHelper
-from modules.forwardingmodule import forwardingEvents
+from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -34,7 +31,7 @@ Table 2 -> Used by Forwarding module
 """
 class cdNgine(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
-    _EVENTS = [forwardingEvents.EventForwardingPipeline]
+    _EVENTS = [EventForwardingPipeline]
 
     def __init__(self, *args, **kwargs):
         super(cdNgine, self).__init__(*args, **kwargs)
@@ -71,5 +68,5 @@ class cdNgine(app_manager.RyuApp):
             return
 
         if msg.table_id == CONF.forwarding.table:
-            fwev = forwardingEvents.EventForwardingPipeline(datapath, msg.match, msg.data)
+            fwev = EventForwardingPipeline(datapath, msg.match, msg.data)
             self.send_event('ForwardingModule', fwev)

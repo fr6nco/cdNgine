@@ -1,5 +1,3 @@
-
-
 class Node(object):
     def __init__(self, name, ip, port, **kwargs):
         """
