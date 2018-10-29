@@ -46,6 +46,13 @@ class ServiceEngine(Node):
         return 'Service Engine node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
             '. Attached to Access Switch {} port id {:d}'.format(self.datapath_id, self.port_id) if self.datapath_id else ''
 
+    def __eq__(self, other):
+        return isinstance(other, ServiceEngine) and \
+               self.name == other.name and \
+               self.ip == other.ip and \
+               self.port == other.port
+
+
 class RequestRouter(Node):
     def __init__(self, **kwargs):
         self.type = 'rr'
@@ -54,3 +61,9 @@ class RequestRouter(Node):
     def __str__(self):
         return 'Request Router node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
             '. Attached to Access Switch {} port id {:d}'.format(self.datapath_id, self.port_id) if self.datapath_id else ''
+
+    def __eq__(self, other):
+        return isinstance(other, RequestRouter) and \
+               self.name == other.name and \
+               self.ip == other.ip and \
+               self.port == other.port

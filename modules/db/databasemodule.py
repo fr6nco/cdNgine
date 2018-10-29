@@ -2,6 +2,7 @@ from ryu.base import app_manager
 from ryu.controller.handler import set_ev_cls
 
 from modules.db.databaseEvents import EventDatabaseQuery, EventDatabaseResponse, SetNodeInformationEvent
+from modules.db.model import DatabaseModel
 
 import json
 
@@ -27,7 +28,7 @@ class DatabaseModule(app_manager.RyuApp):
 
         try:
             with open(self.dbFilePath, 'r') as dbFile:
-                self.db = json.loads(dbFile.read())['cdngine']
+                self.dbobj = json.loads(dbFile.read())['cdngine']
         except IOError as e:
             self.logger.error('Failed to open file ' + e.message)
         except ValueError as e:
@@ -37,14 +38,23 @@ class DatabaseModule(app_manager.RyuApp):
         finally:
             self.logger.info('Database file read')
 
+        self.db = DatabaseModel(self.dbobj)
+
     @set_ev_cls(EventDatabaseQuery, None)
     def getData(self, ev):
-        repl = EventDatabaseResponse(self.db[ev.key], ev.src)
+        """
+        Build elif's for different keys
+        :param ev:
+        :return:
+        """
+        if ev.key == 'nodes':
+            repl = EventDatabaseResponse(self.db.getNodes(), ev.src)
+        else:
+            repl = EventDatabaseResponse(None, ev.src)
+
         self.reply_to_request(ev, repl)
 
     @set_ev_cls(SetNodeInformationEvent, None)
     def setNodeData(self, ev):
-        for idx, node in enumerate(self.db['nodes']):
-            if node['name'] == ev.node.name:
-                self.db['nodes'][idx] = ev.node.serialize()
-        self.logger.debug('Updated node information ' + json.dumps(self.db))
+        self.db.updateNode(ev.node)
+        self.logger.info(self.db)

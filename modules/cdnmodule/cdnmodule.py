@@ -46,7 +46,6 @@ class CDNModule(app_manager.RyuApp):
         self.dpset = kwargs['dpset']
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.nodes = None
-
         self.update_lock = False
 
     def _save_node_state(self, node):
@@ -79,12 +78,12 @@ class CDNModule(app_manager.RyuApp):
         self.ofHelper.add_flow(datapath, CONF.cdn.node_priority, match, actions, CONF.cdn.table, CONF.cdn.cookie)
 
     def _update_nodes(self):
-        if self.update_lock:
+        if not self.update_lock:
             self.update_lock = True
             req = EventDatabaseQuery('nodes')
             req.dst = 'DatabaseModule'
             self.nodes = self.send_request(req).data
-            self.logger.info('Updated Node List')
+            self.logger.debug('Updated Node List')
             self.update_lock = False
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
@@ -99,13 +98,12 @@ class CDNModule(app_manager.RyuApp):
         self._update_nodes()
 
         for node in self.nodes:
-            if node['ip'] in ev.host.ipv4:
-                n = Node.factory(**node)
+            if node.ip in ev.host.ipv4:
                 datapath = self.dpset.get(ev.host.port.dpid)
-                n.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
-                self._install_cdnengine_matching_flow(datapath, n.ip, n.port)
-                self._save_node_state(n)
-                self.logger.info('New Node connected the network. Matching rules were installed ' + n.__str__())
+                node.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
+                self._install_cdnengine_matching_flow(datapath, node.ip, node.port)
+                self._save_node_state(node)
+                self.logger.info('New Node connected the network. Matching rules were installed ' + node.__str__())
                 self._update_nodes()
 
     def _get_node_from_packet(self, ip, ptcp):
