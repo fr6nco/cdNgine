@@ -1,7 +1,7 @@
 from ryu.base import app_manager
 from ryu.controller.handler import set_ev_cls
 
-from modules.db.databaseEvents import EventDatabaseQuery, EventDatabaseResponse, SetNodeInformationEvent
+from modules.db.databaseEvents import EventDatabaseQuery, EventDatabaseResponse
 from modules.db.model import DatabaseModel
 
 import json
@@ -53,8 +53,3 @@ class DatabaseModule(app_manager.RyuApp):
             repl = EventDatabaseResponse(None, ev.src)
 
         self.reply_to_request(ev, repl)
-
-    @set_ev_cls(SetNodeInformationEvent, None)
-    def setNodeData(self, ev):
-        self.db.updateNode(ev.node)
-        self.logger.info(self.db)

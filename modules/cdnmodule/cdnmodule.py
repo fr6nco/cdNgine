@@ -48,10 +48,6 @@ class CDNModule(app_manager.RyuApp):
         self.nodes = None
         self.update_lock = False
 
-    def _save_node_state(self, node):
-        set_node_state_ev = SetNodeInformationEvent(node)
-        self.send_event('DatabaseModule', set_node_state_ev)
-
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
         """
         Installs flow to match based on IP, port to datapath to send to controller
@@ -102,9 +98,7 @@ class CDNModule(app_manager.RyuApp):
                 datapath = self.dpset.get(ev.host.port.dpid)
                 node.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
                 self._install_cdnengine_matching_flow(datapath, node.ip, node.port)
-                self._save_node_state(node)
                 self.logger.info('New Node connected the network. Matching rules were installed ' + node.__str__())
-                self._update_nodes()
 
     def _get_node_from_packet(self, ip, ptcp):
         """
@@ -115,9 +109,8 @@ class CDNModule(app_manager.RyuApp):
         :type ptcp: tcp.tcp
         :return:
         """
-        self._update_nodes()
 
-        for node in self.nodes: #type: Node
+        for node in self.nodes:
             if node.ip == ip.dst and node.port == ptcp.dst_port:
                 return node
             if node.ip == ip.src and node.port == ptcp.src_port:
@@ -143,10 +136,9 @@ class CDNModule(app_manager.RyuApp):
         ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0] #type: tcp.tcp
 
-        node = self._get_node_from_packet(ip, ptcp) #type: Node
+        node = self._get_node_from_packet(ip, ptcp)
 
         if node:
-            pass
-            #TODO continue from here
+            node.handlePacket(pkt, eth, ip, ptcp)
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {} {}', ip, ptcp)
