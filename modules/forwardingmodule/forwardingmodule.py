@@ -137,7 +137,11 @@ class ForwardingModule(app_manager.RyuApp):
     @set_ev_cls(EventShortestPathRequest, None)
     def requestShortestPath(self, ev):
         path = self.get_shortest_path(ev.src_ip, ev.dst_ip)
-        reply = EventShortestPathReply(path=path, dst=ev.src)
+        if path:
+            self.apply_forwarding_path(path)
+            reply = EventShortestPathReply(path=path, dst=ev.src)
+        else:
+            reply = EventShortestPathReply(path=None, dst=ev.src)
         self.reply_to_request(ev, reply)
 
     @set_ev_cls(EventForwardingPipeline, None)
