@@ -4,7 +4,9 @@ from ryu.controller.handler import CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.topology import switches
+from ryu.topology.switches import Port
 from ryu.controller import dpset
+from ryu.controller.controller import Datapath
 from ryu.lib.packet import ether_types, packet, ethernet, arp, ipv4
 
 from shared import ofprotoHelper
@@ -70,7 +72,7 @@ class ForwardingModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, 0, match, actions, CONF.forwarding.table, CONF.forwarding.cookie_arp)
 
-    def add_forwarding_rule(self, datapath, src_ip, dst_ip, out_port):
+    def _add_forwarding_rule(self, datapath, src_ip, dst_ip, out_port):
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_src=src_ip, ipv4_dst=dst_ip)
@@ -79,21 +81,20 @@ class ForwardingModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.forwarding.priority, match, actions, CONF.forwarding.table)
 
-    def apply_forwarding_path(self, path):
+    def _apply_forwarding_path(self, path):
         """
-        # TODO, Allow generic apply path
         :param path: Path to apply
         :type path: Path
         :return:
         """
         for rule in path.fw:
             if isinstance(rule['src'], int):
-                self.add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
+                self._add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
         for rule in path.bw:
             if isinstance(rule['src'], int):
-                self.add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
+                self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
 
-    def get_shortest_path(self, src_ip, dst_ip):
+    def _get_shortest_path(self, src_ip, dst_ip):
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
 
@@ -134,11 +135,37 @@ class ForwardingModule(app_manager.RyuApp):
 
         return path
 
+    def _get_hop_out_port(self, dst_ip, datapath, path):
+        """
+
+        :param dst_ip:
+        :param datapath:
+        :type datapath: Datapath
+        :param path:
+        :type path: Path
+        :return:
+        """
+        if dst_ip == path.dst_ip:
+            for hop in path.fw:
+                if hop['src'] == datapath.id:
+                    for port in self.switches.ports: #type: Port
+                        if port.dpid == datapath.id and port.port_no == hop['port']:
+                            return port
+
+        if dst_ip == path.src_ip:
+            for hop in path.bw:
+                if hop['src'] == datapath.id:
+                    for port in self.switches.ports: #type: Port
+                        if port.dpid == datapath.id and port.port_no == hop['port']:
+                            return port
+
+        return None
+
     @set_ev_cls(EventShortestPathRequest, None)
     def requestShortestPath(self, ev):
-        path = self.get_shortest_path(ev.src_ip, ev.dst_ip)
+        path = self._get_shortest_path(ev.src_ip, ev.dst_ip)
         if path:
-            self.apply_forwarding_path(path)
+            self._apply_forwarding_path(path)
             reply = EventShortestPathReply(path=path, dst=ev.src)
         else:
             reply = EventShortestPathReply(path=None, dst=ev.src)
@@ -146,6 +173,12 @@ class ForwardingModule(app_manager.RyuApp):
 
     @set_ev_cls(EventForwardingPipeline, None)
     def forwardingRequest(self, ev):
+        """
+
+        :param ev:
+        :type ev: EventForwardingPipeline
+        :return:
+        """
         datapath = ev.datapath
         match = ev.match
 
@@ -176,7 +209,14 @@ class ForwardingModule(app_manager.RyuApp):
             # gets the shortest path between two nodes and installs.
             ip = pkt.get_protocols(ipv4.ipv4)[0]
 
-            path = self.get_shortest_path(ip.src, ip.dst)
+            path = self._get_shortest_path(ip.src, ip.dst)
             if path:
-                self.apply_forwarding_path(path)
+                self._apply_forwarding_path(path)
+                if ev.doPktOut:
+                    out_port = self._get_hop_out_port(ip.dst, ev.datapath, path)
+                    if out_port:
+                        self.logger.info('Doing a Packet out on forwarding request')
+                        self.ofHelper.do_packet_out(ev.data, ev.datapath, out_port)
+                    else:
+                        self.logger.error('Failed to retrieve next hop port')
 

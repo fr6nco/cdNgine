@@ -7,6 +7,7 @@ from ryu.lib.packet import packet, ethernet, ether_types
 
 from shared import ofprotoHelper
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
+from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -68,5 +69,9 @@ class cdNgine(app_manager.RyuApp):
             return
 
         if msg.table_id == CONF.forwarding.table:
-            fwev = EventForwardingPipeline(datapath, msg.match, msg.data)
+            fwev = EventForwardingPipeline(datapath, msg.match, msg.data, True)
             self.send_event('ForwardingModule', fwev)
+
+        if msg.table_id == CONF.cdn.table:
+            cdnev = EventCDNPipeline(datapath, msg.match, msg.data)
+            self.send_event('CDNModule', cdnev)

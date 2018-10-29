@@ -4,14 +4,16 @@ from ryu.base import app_manager
 from ryu.topology import switches
 from ryu.topology import event as TopologyEvent
 from ryu.controller import dpset
+from ryu.controller.controller import Datapath
 from ryu.controller.handler import set_ev_cls
 
-from ryu.lib.packet import ether_types
+from ryu.lib.packet import ether_types, packet, ethernet, ipv4, tcp
 from ryu.ofproto import inet
 
 from shared import ofprotoHelper
 from modules.db.databaseEvents import EventDatabaseQuery, SetNodeInformationEvent
 from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter
+from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -45,6 +47,8 @@ class CDNModule(app_manager.RyuApp):
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.nodes = None
 
+        self.update_lock = False
+
     def _save_node_state(self, node):
         set_node_state_ev = SetNodeInformationEvent(node)
         self.send_event('DatabaseModule', set_node_state_ev)
@@ -74,6 +78,14 @@ class CDNModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.node_priority, match, actions, CONF.cdn.table, CONF.cdn.cookie)
 
+    def _update_nodes(self):
+        if self.update_lock:
+            self.update_lock = True
+            req = EventDatabaseQuery('nodes')
+            req.dst = 'DatabaseModule'
+            self.nodes = self.send_request(req).data
+            self.logger.info('Updated Node List')
+            self.update_lock = False
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
     def _host_in_event(self, ev):
@@ -81,13 +93,10 @@ class CDNModule(app_manager.RyuApp):
         This function if responsible for installing matching rules sending to controller if a SE or an RR joins the network
         List of RRs and SEs are defined in the database.json file
         :param ev:
+        :type ev: TopologyEvent.EventHostAdd
         :return:
         """
-        if not self.nodes:
-            req = EventDatabaseQuery('nodes')
-            req.dst = 'DatabaseModule'
-            self.nodes = self.send_request(req).data
-            self.logger.info('Updated Node List')
+        self._update_nodes()
 
         for node in self.nodes:
             if node['ip'] in ev.host.ipv4:
@@ -97,5 +106,49 @@ class CDNModule(app_manager.RyuApp):
                 self._install_cdnengine_matching_flow(datapath, n.ip, n.port)
                 self._save_node_state(n)
                 self.logger.info('New Node connected the network. Matching rules were installed ' + n.__str__())
+                self._update_nodes()
 
+    def _get_node_from_packet(self, ip, ptcp):
+        """
 
+        :param ip:
+        :type ip: ipv4.ipv4
+        :param ptcp:
+        :type ptcp: tcp.tcp
+        :return:
+        """
+        self._update_nodes()
+
+        for node in self.nodes: #type: Node
+            if node.ip == ip.dst and node.port == ptcp.dst_port:
+                return node
+            if node.ip == ip.src and node.port == ptcp.src_port:
+                return node
+        return None
+
+    @set_ev_cls(EventCDNPipeline, None)
+    def cdnHandlingRequest(self, ev):
+        """
+        Handles the incoming TCP sessions towards RR or SE
+        We only should receive packets destined to CDN engine (SE or RR) over TCP
+
+        # TODO, cases that are not valid (not tcp, host not existing). Situations like this might happen on Controller restart
+
+        :param ev:
+        :type ev: EventCDNPipeline
+        :return:
+        """
+        pkt = packet.Packet(ev.data)
+        datapath = ev.datapath #type: Datapath
+
+        eth = pkt.get_protocols(ethernet.ethernet)[0] #type: ethernet.ethernet
+        ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
+        ptcp = pkt.get_protocols(tcp.tcp)[0] #type: tcp.tcp
+
+        node = self._get_node_from_packet(ip, ptcp) #type: Node
+
+        if node:
+            pass
+            #TODO continue from here
+        else:
+            self.logger.error('Could not find node dest / source for the incoming packet packet {} {}', ip, ptcp)

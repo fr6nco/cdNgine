@@ -6,6 +6,8 @@ from ryu.lib.packet import tcp
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import in_proto
 from ryu.lib import mac
+from ryu.topology.switches import Port
+from ryu.controller.controller import Datapath
 
 import logging
 
@@ -51,15 +53,17 @@ class ofProtoHelperGeneric():
         Does a packet out with no buffer
         :param data: Raw packed data
         :param datapath: Datapath Object
+        :type datapath: Datapath
         :param port: Port object
+        :type port: Port
         :return: nothing
         """
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
 
         actions = [parser.OFPActionOutput(port.port_no)]
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=data)
-        datapath.send_msg(out)
+        datapath.send_packet_out(buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=data)
+
 
     def del_flow_by_cookie(self, datapath, table_id, cookie):
         ofproto = datapath.ofproto
