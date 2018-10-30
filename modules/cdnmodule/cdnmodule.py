@@ -144,7 +144,7 @@ class CDNModule(app_manager.RyuApp):
 
         self.logger.info('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
 
-        node = self._get_node_from_packet(ip, ptcp)
+        node = self._get_node_from_packet(ip, ptcp) # type: Node
 
         if node:
             pkt = node.handlePacket(pkt, eth, ip, ptcp) #type: packet.Packet
