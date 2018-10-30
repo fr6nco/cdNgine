@@ -142,7 +142,7 @@ class CDNModule(app_manager.RyuApp):
         ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0] #type: tcp.tcp
 
-        self.logger.info('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
+        self.logger.debug('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
 
         node = self._get_node_from_packet(ip, ptcp) # type: Node
 

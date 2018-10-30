@@ -1,6 +1,6 @@
 from ryu.lib.packet import packet, tcp, ethernet, ipv4
+from ryu.lib import hub
 import logging
-import eventlet
 from BaseHTTPServer import BaseHTTPRequestHandler
 from StringIO import StringIO
 
@@ -18,6 +18,7 @@ class Node(object):
         self.port = port
         self.datapath_id = None
         self.port_id = None
+        self.logger = logging.getLogger('Node')
         super(Node, self).__init__()
 
     def factory(**kwargs):
@@ -67,6 +68,7 @@ class RequestRouter(Node):
     def __init__(self, **kwargs):
         self.type = 'rr'
         self.handoverSessions = []
+        self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
         super(RequestRouter, self).__init__(**kwargs)
 
     def __str__(self):
@@ -78,6 +80,15 @@ class RequestRouter(Node):
                self.name == other.name and \
                self.ip == other.ip and \
                self.port == other.port
+
+    def _garbageCollector(self):
+        for sess in self.handoverSessions:  # type: HandoverSession
+            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET]:
+                self.logger.info('Removing finished session ' + str(sess))
+                self.handoverSessions.remove(sess)
+
+        self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
+
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -92,6 +103,7 @@ class RequestRouter(Node):
         :type ptcp: tcp.tcp
         :return:
         """
+
         found = False
         for sess in self.handoverSessions: #type: HandoverSession
             if sess.ip.src == ip.src and \
@@ -99,23 +111,30 @@ class RequestRouter(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 found = True
-                return sess.handlePacket(pkt, eth, ip, ptcp)
+                pkt = sess.handlePacket(pkt, eth, ip, ptcp)
+                self.logger.info(str(sess))
+                return pkt
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 found = True
-                return sess.handlePacket(pkt, eth, ip, ptcp)
+                pkt = sess.handlePacket(pkt, eth, ip, ptcp)
+                self.logger.info(str(sess))
+                return pkt
 
         if not found:
             # Create a new TCP session if the existin session is not found
-            sess = TCPSesssion(pkt, eth, ip, ptcp)
-            self.handoverSessions.append(sess)
+            if ptcp.bits & tcp.TCP_SYN:
+                sess = HandoverSession(pkt, eth, ip, ptcp)
+                self.handoverSessions.append(sess)
+            else:
+                self.logger.error('Unexpected non SYN packet arrived to processing')
             return pkt
 
 
 
-class TCPSesssion():
+class TCPSesssion(object):
     STATE_OPENING = 'opening'
     STATE_ESTABLISHED = 'established'
     STATE_CLOSING = 'closing'
@@ -136,7 +155,8 @@ class TCPSesssion():
 
     TIMEOUT_TIMER = 10
     QUIET_TIMER = 10
-    GARBAGE_TIMER = 30 + QUIET_TIMER
+    RESET_TIMER = 1
+    GARBAGE_TIMER = 30 + QUIET_TIMER  # This timer is used to handle problematic closes
 
     def __init__(self, pkt, eth, ip, ptcp):
         """
@@ -163,13 +183,18 @@ class TCPSesssion():
         self.server_state = None
         self.src_seq = ptcp.seq
 
-        self.timeoutTimer = eventlet.spawn_after(self.TIMEOUT_TIMER, self._handleTimeout)
+        self.timeoutTimer = hub.spawn_after(self.TIMEOUT_TIMER, self._handleTimeout)
         self.quietTimer = None
         self.garbageTimer = None
 
         self.upstream_payload = ""
 
         self.logger = logging.getLogger('TCPSession')
+        self.logger.info('New Session ' + str(self))
+
+    def __str__(self):
+        return "Session from " + self.ip.src + ':' + str(self.ptcp.src_port) + \
+               ' to ' + self.ip.dst + ':' + str(self.ptcp.dst_port) + ' in state ' + self.state
 
     def _handleQuietTimerTimeout(self):
         self.logger.info('Quiet timer occured for ' + str(self))
@@ -179,31 +204,32 @@ class TCPSesssion():
             self.state = self.STATE_TIMEOUT
         elif self.state == self.STATE_CLOSED_RESET_TIME_WAIT:
             self.state = self.STATE_CLOSED_RESET
+        self.quietTimer = None
 
     def _handleTimeout(self):
         self.logger.info('Timeout occured for ' + str(self))
         self.state = self.STATE_TIMEOUT_TIME_WAIT
         if self.quietTimer:
-            self.quietTimer.kill()
-        self.quietTimer = eventlet.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
+            self.quietTimer.cancel()
+        self.quietTimer = hub.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
 
     def _handleReset(self):
         self.state = self.STATE_CLOSED_RESET_TIME_WAIT
-        if self.timeoutTimer:
-            self.timeoutTimer.kill()
-        if self.quietTimer:
-            self.quietTimer.kill()
-        self.quietTimer = eventlet.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
+        if self.timeoutTimer is not None:
+            self.timeoutTimer.cancel()
+        if self.quietTimer is not None:
+            self.quietTimer.cancel()
+        self.quietTimer = hub.spawn_after(self.RESET_TIMER, self._handleQuietTimerTimeout)
 
     def _handleGarbage(self):
         if self.STATE_ESTABLISHED not in [self.client_state, self.server_state]:
-            print 'Due to retransmission and bad packet ordering state did not close, ' \
-                  'however none of the client/server is in established state. Closing and cleaning up garbage'
+            self.logger.debug('Due to retransmission and bad packet ordering state did not close, ' \
+                  'however none of the client/server is in established state. Closing and cleaning up garbage')
             self.state = self.STATE_CLOSED
 
     def _handleClosing(self, flags, from_client, p, seq, ack):
         if self.garbageTimer is None:
-            self.garbageTimer = eventlet.spawn_after(self.GARBAGE_TIMER, self._handleGarbage)
+            self.garbageTimer = hub.spawn_after(self.GARBAGE_TIMER, self._handleGarbage)
 
         if flags & tcp.TCP_RST:
             self._handleReset()
@@ -243,6 +269,14 @@ class TCPSesssion():
         self.upstream_payload = ""
 
     def handlePacket(self, pkt, eth, ip, ptcp):
+        """
+        TCP state diagram handling of packet
+        :param pkt:
+        :param eth:
+        :param ip:
+        :param ptcp:
+        :return:
+        """
         pload = None
         for protocol in pkt:
             if not hasattr(protocol, 'protocol_name'):
@@ -263,19 +297,23 @@ class TCPSesssion():
                     elif ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                     elif ptcp.bits & tcp.TCP_ACK:
+                        self.logger.info('Transitioning to established state ' + str(self))
                         self.client_state = self.STATE_ESTABLISHED
                         self.server_state = self.STATE_ESTABLISHED
                         self.state = self.STATE_ESTABLISHED
-                        self.timeoutTimer.kill()
+                        self.timeoutTimer.cancel()
+                        self.timeoutTimer = None
             else:
                 if self.client_state == self.CLIENT_STATE_SYN_SENT:
-                    if ptcp.bits & (tcp.TCP_SYN | tcp.TCP_ACK):
+                    if ptcp.bits & tcp.TCP_RST:
+                        self._handleReset()
+                    elif ptcp.bits & (tcp.TCP_SYN | tcp.TCP_ACK) == (tcp.TCP_SYN | tcp.TCP_ACK):
                         if self.server_state is None:
+                            self.logger.info('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                             self.server_state = self.SERVER_STATE_SYN_RCVD
                         else:
                             self.logger.info('Retransmission from server occurred on SYN_ACK' + str(self))
-                    elif ptcp.bits & tcp.TCP_RST:
-                        self._handleReset()
+
         elif self.state == self.STATE_ESTABLISHED:
             if from_client:
                 if ptcp.bits & tcp.TCP_FIN:
@@ -297,8 +335,9 @@ class TCPSesssion():
         elif self.state == self.STATE_CLOSING:
             self._handleClosing(ptcp.bits, from_client, pload, ptcp.seq, ptcp.ack)
             if self.state == self.STATE_TIME_WAIT:
-                self.garbageTimer.kill()
-                self.quietTimer = eventlet.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
+                self.garbageTimer.cancel()
+                self.garbageTimer = None
+                self.quietTimer = hub.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
 
         return pkt
 

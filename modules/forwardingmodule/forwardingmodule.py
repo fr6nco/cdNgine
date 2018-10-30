@@ -150,14 +150,14 @@ class ForwardingModule(app_manager.RyuApp):
         if dst_ip == path.dst_ip:
             for hop in path.fw:
                 if hop['src'] == datapath.id:
-                    for port in self.switches.ports: #type: Port
+                    for port in self.switches.ports:  # type: Port
                         if port.dpid == datapath.id and port.port_no == hop['port']:
                             return port
 
         if dst_ip == path.src_ip:
             for hop in path.bw:
                 if hop['src'] == datapath.id:
-                    for port in self.switches.ports: #type: Port
+                    for port in self.switches.ports:  # type: Port
                         if port.dpid == datapath.id and port.port_no == hop['port']:
                             return port
 
@@ -185,17 +185,16 @@ class ForwardingModule(app_manager.RyuApp):
         match = ev.match
 
         pkt = packet.Packet(ev.data)
-        eth = pkt.get_protocols(ethernet.ethernet)[0] #type: ethernet.ethernet
+        eth = pkt.get_protocols(ethernet.ethernet)[0]  # type: ethernet.ethernet
 
-        self.logger.info('EventForwarding requested on ' + str(eth))
+        self.logger.debug('EventForwarding requested on ' + str(eth))
 
         if eth.ethertype == ether_types.ETH_TYPE_ARP:
-            """
-            This part is responsible for handling ARP's, Arps are only recived and sent on access port to eliminiate forwarding loops
-            """
+            # This part is responsible for handling ARP's,
+            # ARP are only received and sent on access port to eliminate forwarding loops
             arpp = pkt.get_protocols(arp.arp)[0]
             if arpp.opcode in [arp.ARP_REQUEST, arp.ARP_REPLY]:
-                self.logger.info('we are looking for %s:%s from %s:%s', arpp.dst_ip, arpp.dst_mac, arpp.src_ip, arpp.src_mac)
+                self.logger.debug('we are looking for %s:%s from %s:%s', arpp.dst_ip, arpp.dst_mac, arpp.src_ip, arpp.src_mac)
                 host = [x for key, x in self.switches.hosts.iteritems() if x.ipv4[0] == arpp.dst_ip]
                 if host:
                     host = host[0]
@@ -211,9 +210,9 @@ class ForwardingModule(app_manager.RyuApp):
                         self.ofHelper.do_packet_out(ev.data, self.switches.dps[port.dpid], port)
         elif eth.ethertype == ether_types.ETH_TYPE_IP:
             # gets the shortest path between two nodes and installs.
-            ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
+            ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
 
-            self.logger.info('Eventforwarding on IP packet ' + str(ip))
+            self.logger.debug('Eventforwarding on IP packet ' + str(ip))
 
             path = self._get_shortest_path(ip.src, ip.dst)
             if path:
@@ -221,7 +220,7 @@ class ForwardingModule(app_manager.RyuApp):
                 if ev.doPktOut:
                     out_port = self._get_hop_out_port(ip.dst, ev.datapath, path)
                     if out_port:
-                        self.logger.info('Doing a Packet out on forwarding request')
+                        self.logger.debug('Doing a Packet out on forwarding request')
                         self.ofHelper.do_packet_out(ev.data, ev.datapath, out_port)
                     else:
                         self.logger.error('Failed to retrieve next hop port')
