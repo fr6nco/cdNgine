@@ -40,16 +40,5 @@ class DatabaseModule(app_manager.RyuApp):
 
         self.db = DatabaseModel(self.dbobj)
 
-    @set_ev_cls(EventDatabaseQuery, None)
-    def getData(self, ev):
-        """
-        Build elif's for different keys
-        :param ev:
-        :return:
-        """
-        if ev.key == 'nodes':
-            repl = EventDatabaseResponse(self.db.getNodes(), ev.src)
-        else:
-            repl = EventDatabaseResponse(None, ev.src)
-
-        self.reply_to_request(ev, repl)
+    def getData(self):
+        return self.db

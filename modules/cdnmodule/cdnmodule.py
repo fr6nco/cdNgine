@@ -12,8 +12,11 @@ from ryu.ofproto import inet
 
 from shared import ofprotoHelper
 from modules.db.databaseEvents import EventDatabaseQuery, SetNodeInformationEvent
+from modules.db.databasemodule import DatabaseModule
 from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
+
+from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -35,15 +38,17 @@ class CDNModule(app_manager.RyuApp):
 
     _CONTEXTS = {
         'switches': switches.Switches,
-        'dpset': dpset.DPSet
+        'dpset': dpset.DPSet,
+        'db': DatabaseModule
     }
 
     def __init__(self, *args, **kwargs):
         super(CDNModule, self).__init__(*args, **kwargs)
 
         CONF.register_opts(self.opts, group='cdn')
-        self.switches = kwargs['switches']
-        self.dpset = kwargs['dpset']
+        self.switches = kwargs['switches'] #type: switches.Switches
+        self.dpset = kwargs['dpset'] #type: dpset.DPSet
+        self.db = kwargs['db'] #type: DatabaseModule
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.nodes = None
         self.update_lock = False
@@ -76,10 +81,8 @@ class CDNModule(app_manager.RyuApp):
     def _update_nodes(self):
         if not self.update_lock:
             self.update_lock = True
-            req = EventDatabaseQuery('nodes')
-            req.dst = 'DatabaseModule'
-            self.nodes = self.send_request(req).data
-            self.logger.debug('Updated Node List')
+            self.nodes = self.db.getData().getNodes()
+            self.logger.info('Updated Node List')
             self.update_lock = False
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
@@ -92,6 +95,9 @@ class CDNModule(app_manager.RyuApp):
         :return:
         """
         self._update_nodes()
+
+        if not self.nodes:
+            return
 
         for node in self.nodes:
             if node.ip in ev.host.ipv4:
@@ -136,9 +142,13 @@ class CDNModule(app_manager.RyuApp):
         ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0] #type: tcp.tcp
 
+        self.logger.info('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
+
         node = self._get_node_from_packet(ip, ptcp)
 
         if node:
-            node.handlePacket(pkt, eth, ip, ptcp)
+            pkt = node.handlePacket(pkt, eth, ip, ptcp) #type: packet.Packet
+            fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
+            self.send_event(name='ForwardingModule', ev=fwev)
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {} {}', ip, ptcp)

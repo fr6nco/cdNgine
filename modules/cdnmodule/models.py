@@ -77,6 +77,7 @@ class RequestRouter(Node):
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
+        Handles packet and returns the packet. Packet might change
 
         :param pkt:
         :param eth:
@@ -94,20 +95,20 @@ class RequestRouter(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 found = True
-                sess.handlePacket(pkt, eth, ip, ptcp)
-                break
+                return sess.handlePacket(pkt, eth, ip, ptcp)
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 found = True
-                sess.handlePacket(pkt, eth, ip, ptcp)
-                break
+                return sess.handlePacket(pkt, eth, ip, ptcp)
 
         if not found:
             # Create a new TCP session if the existin session is not found
             sess = TCPSesssion(pkt, eth, ip, ptcp)
             self.handoverSessions.append(sess)
+            return pkt
+
 
 
 class TCPSesssion():
@@ -154,7 +155,7 @@ class TCPSesssion():
 
 
     def handlePacket(self, pkt, eth, ip, ptcp):
-        pass
+        return pkt
 
 
 

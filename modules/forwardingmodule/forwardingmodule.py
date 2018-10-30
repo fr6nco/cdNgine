@@ -12,6 +12,7 @@ from ryu.lib.packet import ether_types, packet, ethernet, arp, ipv4
 from shared import ofprotoHelper
 from modules.forwardingmodule.models import Path
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathReply, EventShortestPathRequest
+from modules.db.databasemodule import DatabaseModule
 
 import networkx as nx
 
@@ -31,7 +32,8 @@ class ForwardingModule(app_manager.RyuApp):
     """
     _CONTEXTS = {
         'switches': switches.Switches,
-        'dpset': dpset.DPSet
+        'dpset': dpset.DPSet,
+        'db': DatabaseModule
     }
 
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -183,7 +185,9 @@ class ForwardingModule(app_manager.RyuApp):
         match = ev.match
 
         pkt = packet.Packet(ev.data)
-        eth = pkt.get_protocols(ethernet.ethernet)[0]
+        eth = pkt.get_protocols(ethernet.ethernet)[0] #type: ethernet.ethernet
+
+        self.logger.info('EventForwarding requested on ' + str(eth))
 
         if eth.ethertype == ether_types.ETH_TYPE_ARP:
             """
@@ -207,7 +211,9 @@ class ForwardingModule(app_manager.RyuApp):
                         self.ofHelper.do_packet_out(ev.data, self.switches.dps[port.dpid], port)
         elif eth.ethertype == ether_types.ETH_TYPE_IP:
             # gets the shortest path between two nodes and installs.
-            ip = pkt.get_protocols(ipv4.ipv4)[0]
+            ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
+
+            self.logger.info('Eventforwarding on IP packet ' + str(ip))
 
             path = self._get_shortest_path(ip.src, ip.dst)
             if path:
