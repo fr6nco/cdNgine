@@ -8,6 +8,7 @@ from ryu.lib.packet import packet, ethernet, ether_types
 from shared import ofprotoHelper
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
+from modules.wsendpointmodule.wsendpointmodule import WsEndpointModule
 
 from ryu import cfg
 CONF = cfg.CONF

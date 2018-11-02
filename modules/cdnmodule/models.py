@@ -89,6 +89,8 @@ class RequestRouter(Node):
 
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
 
+    def _performHandover(self, sess):
+        pass
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -110,7 +112,6 @@ class RequestRouter(Node):
                     sess.ip.dst == ip.dst and \
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
-                found = True
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
                 self.logger.info(str(sess))
                 return pkt
@@ -118,19 +119,21 @@ class RequestRouter(Node):
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
-                found = True
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
                 self.logger.info(str(sess))
+
+                if sess.handoverReady:
+                    self.logger.info('Starting handover for ' + str(sess))
+                    self._performHandover(sess)
                 return pkt
 
-        if not found:
-            # Create a new TCP session if the existin session is not found
-            if ptcp.bits & tcp.TCP_SYN:
-                sess = HandoverSession(pkt, eth, ip, ptcp)
-                self.handoverSessions.append(sess)
-            else:
-                self.logger.error('Unexpected non SYN packet arrived to processing')
-            return pkt
+        # Create a new TCP session if the existin session is not found
+        if ptcp.bits & tcp.TCP_SYN:
+            sess = HandoverSession(pkt, eth, ip, ptcp)
+            self.handoverSessions.append(sess)
+        else:
+            self.logger.error('Unexpected non SYN packet arrived to processing')
+        return pkt
 
 
 
@@ -186,6 +189,8 @@ class TCPSesssion(object):
         self.timeoutTimer = hub.spawn_after(self.TIMEOUT_TIMER, self._handleTimeout)
         self.quietTimer = None
         self.garbageTimer = None
+
+        self.handoverReady = False
 
         self.upstream_payload = ""
 
@@ -264,8 +269,7 @@ class TCPSesssion(object):
                 self.logger.info('payload parsed')
                 self.logger.info(self.httpRequest.raw_requestline)
                 self.reqeuest_size = len(self.upstream_payload)
-                # Start handover here
-                # TODO
+                self.handoverReady = True
         self.upstream_payload = ""
 
     def handlePacket(self, pkt, eth, ip, ptcp):

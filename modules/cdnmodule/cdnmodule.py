@@ -17,6 +17,7 @@ from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
+from modules.wsendpointmodule.ws_endpoint import WsCDNEndpoint
 
 from ryu import cfg
 CONF = cfg.CONF
