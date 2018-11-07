@@ -47,9 +47,9 @@ class CDNModule(app_manager.RyuApp):
         super(CDNModule, self).__init__(*args, **kwargs)
 
         CONF.register_opts(self.opts, group='cdn')
-        self.switches = kwargs['switches'] #type: switches.Switches
-        self.dpset = kwargs['dpset'] #type: dpset.DPSet
-        self.db = kwargs['db'] #type: DatabaseModule
+        self.switches = kwargs['switches']  # type: switches.Switches
+        self.dpset = kwargs['dpset']  # type: dpset.DPSet
+        self.db = kwargs['db']  # type: DatabaseModule
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.nodes = None
         self.update_lock = False
@@ -137,18 +137,18 @@ class CDNModule(app_manager.RyuApp):
         :return:
         """
         pkt = packet.Packet(ev.data)
-        datapath = ev.datapath #type: Datapath
+        datapath = ev.datapath  # type: Datapath
 
-        eth = pkt.get_protocols(ethernet.ethernet)[0] #type: ethernet.ethernet
-        ip = pkt.get_protocols(ipv4.ipv4)[0] #type: ipv4.ipv4
-        ptcp = pkt.get_protocols(tcp.tcp)[0] #type: tcp.tcp
+        eth = pkt.get_protocols(ethernet.ethernet)[0]  # type: ethernet.ethernet
+        ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
+        ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
 
         self.logger.debug('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
 
-        node = self._get_node_from_packet(ip, ptcp) # type: Node
+        node = self._get_node_from_packet(ip, ptcp)  # type: Node
 
         if node:
-            pkt = node.handlePacket(pkt, eth, ip, ptcp) #type: packet.Packet
+            pkt = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
         else:

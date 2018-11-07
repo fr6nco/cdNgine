@@ -18,6 +18,9 @@ class DatabaseModel(object):
     def getNodes(self):
         return self.nodes
 
+    def getNodesByType(self, type):
+        return filter(lambda x: x.type == type, self.getNodes())
+
     def updateNode(self, unode):
         for idx, node in enumerate(self.nodes):
             if node == unode:

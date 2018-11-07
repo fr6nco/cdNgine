@@ -6,6 +6,7 @@ from ryu.app.wsgi import (
 )
 
 from modules.db.databasemodule import DatabaseModule
+from modules.cdnmodule.models import RequestRouter, ServiceEngine
 
 import logging
 import json
@@ -22,12 +23,25 @@ class WsCDNEndpoint(ControllerBase):
 
         super(WsCDNEndpoint, self).__init__(req, link, data, **config)
 
-    @rpc_public
-    def hello(self):
-        self.logger.info('Request Router with http params hello registering')
-
     def tracer(self, dir, context, msg):
         self.logger.info("{}: {}".format(dir, msg))
+
+    @rpc_public
+    def hello(self, ip, port):
+        self.logger.info('Request Router with http params {}:{} saying hello'.format(ip, port))
+        rrs = self.db.getData().getNodesByType('rr')
+
+        for rr in rrs:  # type: RequestRouter
+            if rr.ip == ip and rr.port == port:
+                return {'code': 200, 'res': rr.serialize()['name']}
+        return {'code': 404, 'res': 'rr not found'}
+
+    @rpc_public
+    def getses(self):
+        self.logger.info('Request router requesting Service Engines')
+        ses = self.db.getData().getNodesByType('se')
+        return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port']} for x in map(lambda x: x.serialize(), ses)]}
+
 
     @websocket('wscdn', url)
     def _websocket_handler(self, ws):

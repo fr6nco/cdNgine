@@ -4,7 +4,7 @@
       {
         "name": "rr1",
         "ip": "10.10.0.5",
-        "port": 8080,
+        "port": 8082,
         "type": "rr",
         "datapath_id": null,
         "port_id": null
