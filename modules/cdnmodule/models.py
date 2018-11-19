@@ -115,6 +115,7 @@ class RequestRouter(Node):
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
         super(RequestRouter, self).__init__(**kwargs)
         self.type = 'rr'
+        self.getSe = None
 
     def __str__(self):
         return 'Request Router node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
@@ -135,7 +136,20 @@ class RequestRouter(Node):
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
 
     def _performHandover(self, sess):
-        pass
+        """
+
+        :param sess:
+        :type sess: HandoverSession
+        :return:
+        """
+        se = self.getSe(sess.ip.src)
+        if se:
+            sess.serviceEngine = se
+        else:
+            self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+
+    def setSeLoaderCallback(self, cb):
+        self.getSe = cb
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -393,6 +407,7 @@ class TCPSesssion(object):
 class HandoverSession(TCPSesssion):
     def __init__(self, pkt, eth, ip, ptcp):
         super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
+        self.serviceEngine = None
 
 
 class HttpRequest(BaseHTTPRequestHandler):

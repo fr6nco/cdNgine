@@ -19,6 +19,8 @@ from modules.cdnmodule.cdnEvents import EventCDNPipeline
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
 from modules.wsendpointmodule.ws_endpoint import WsCDNEndpoint
 
+import networkx as nx
+
 from ryu import cfg
 CONF = cfg.CONF
 
@@ -51,8 +53,7 @@ class CDNModule(app_manager.RyuApp):
         self.dpset = kwargs['dpset']  # type: dpset.DPSet
         self.db = kwargs['db']  # type: DatabaseModule
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
-        self.nodes = None
-        self.update_lock = False
+        self.nodes = []
 
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
         """
@@ -80,11 +81,39 @@ class CDNModule(app_manager.RyuApp):
         self.ofHelper.add_flow(datapath, CONF.cdn.node_priority, match, actions, CONF.cdn.table, CONF.cdn.cookie)
 
     def _update_nodes(self):
-        if not self.update_lock:
-            self.update_lock = True
-            self.nodes = self.db.getData().getNodes()
-            self.logger.info('Updated Node List')
-            self.update_lock = False
+        self.nodes = self.db.getData().getNodes()
+
+        for node in self.nodes:
+            if node.type == 'rr':
+                node.setSeLoaderCallback(self.get_closest_se_to_ip)
+
+    def get_closest_se_to_ip(self, ip):
+        switches = [dp for dp in self.switches.dps]
+        links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
+
+        g = nx.DiGraph()
+        g.add_nodes_from(switches)
+        g.add_edges_from(links)
+
+        for mac, host in self.switches.hosts.iteritems():
+            if ip in host.ipv4:
+                g.add_node(ip)
+                g.add_edge(ip, host.port.dpid)
+                g.add_edge(host.port.dpid, ip, port=host.port.port_no)
+            for node in self.nodes:
+                if node.type == 'se' and node.ip in host.ipv4:
+                    g.add_node(str(node.ip))
+                    g.add_edge(str(node.ip), host.port.dpid)
+                    g.add_edge(host.port.dpid, str(node.ip), port=host.port.port_no)
+
+        lengths = nx.single_source_shortest_path_length(g, ip)
+        lensrted = sorted(lengths.items(), key=lambda x: x[1])
+
+        for distance in lensrted:
+            for node in self.nodes:
+                if node.type == 'se' and node.ip == distance[0]:
+                    return node
+        return None
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
     def _host_in_event(self, ev):
@@ -124,6 +153,7 @@ class CDNModule(app_manager.RyuApp):
                 return node
         return None
 
+
     @set_ev_cls(EventCDNPipeline, None)
     def cdnHandlingRequest(self, ev):
         """
@@ -152,4 +182,4 @@ class CDNModule(app_manager.RyuApp):
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
         else:
-            self.logger.error('Could not find node dest / source for the incoming packet packet {} {}', ip, ptcp)
+            self.logger.error('Could not find node dest / source for the incoming packet packet {}'.format(ip))
