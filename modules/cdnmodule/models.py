@@ -178,7 +178,6 @@ class RequestRouter(Node):
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.info(str(sess))
 
                 if sess.handoverReady:
                     self.logger.info('Starting handover for ' + str(sess))
@@ -248,7 +247,9 @@ class TCPSesssion(object):
         self.quietTimer = None
         self.garbageTimer = None
 
+        self.request_size = 0
         self.handoverReady = False
+        self.handoverRequested = False
 
         self.upstream_payload = ""
 
@@ -315,8 +316,7 @@ class TCPSesssion(object):
                 if self.server_state == self.STATE_CLOSED:
                     self.state = self.STATE_TIME_WAIT
 
-    def _processPayload(self, p):
-        self.upstream_payload += p
+    def _processPayload(self):
         if self.upstream_payload.strip() == "":
             self.logger.info('Payload is empty line, not parsing')
         else:
@@ -326,7 +326,7 @@ class TCPSesssion(object):
             else:
                 self.logger.info('payload parsed')
                 self.logger.info(self.httpRequest.raw_requestline)
-                self.reqeuest_size = len(self.upstream_payload)
+                self.request_size = len(self.upstream_payload)
                 self.handoverReady = True
         self.upstream_payload = ""
 
@@ -385,7 +385,8 @@ class TCPSesssion(object):
                     self._handleReset()
                 elif ptcp.bits & tcp.TCP_PSH:
                     if pload:
-                        self._processPayload(pload)
+                        self.upstream_payload +=pload
+                        self._processPayload()
                 elif ptcp.bits & tcp.TCP_ACK:
                     if pload is not None:
                         self.upstream_payload += pload
@@ -400,7 +401,6 @@ class TCPSesssion(object):
                 self.garbageTimer.cancel()
                 self.garbageTimer = None
                 self.quietTimer = hub.spawn_after(self.QUIET_TIMER, self._handleQuietTimerTimeout)
-
         return pkt
 
 
@@ -408,6 +408,15 @@ class HandoverSession(TCPSesssion):
     def __init__(self, pkt, eth, ip, ptcp):
         super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
         self.serviceEngine = None
+
+    def popDestinationSesssion(self):
+        if not self.serviceEngine:
+            return None
+        for sess in self.serviceEngine.sessions: # type: TCPSesssion
+            if sess.state == TCPSesssion.STATE_ESTABLISHED and not sess.handoverRequested:
+                sess.handoverRequested = True
+                return sess
+        return None
 
 
 class HttpRequest(BaseHTTPRequestHandler):

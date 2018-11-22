@@ -42,6 +42,15 @@ class WsCDNEndpoint(ControllerBase):
         ses = self.db.getData().getNodesByType('se')
         return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port']} for x in map(lambda x: x.serialize(), ses)]}
 
+    @rpc_public
+    def getmatchingsess(self, src_ip, src_port, dst_ip, dst_port):
+        self.logger.info('Request Rotuer requesting handover destination')
+        matchingsess = self.db.getData().getMatchingSess(src_ip, src_port, dst_ip, dst_port)
+        if matchingsess:
+            return {'code': 200, 'res': {'src_ip': matchingsess.ip.src, 'src_port': matchingsess.ptcp.src_port,
+                                         'dst_ip': matchingsess.ip.dst, 'dst_port': matchingsess.ptcp.dst_port}}
+        else:
+            return {'code': 404, 'res': 'Failed to Retrieve Destination Session'}
 
     @websocket('wscdn', url)
     def _websocket_handler(self, ws):

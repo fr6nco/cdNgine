@@ -1,4 +1,4 @@
-from modules.cdnmodule.models import RequestRouter, ServiceEngine, Node
+from modules.cdnmodule.models import RequestRouter, ServiceEngine, Node, HandoverSession, TCPSesssion
 
 
 class DatabaseModel(object):
@@ -25,6 +25,14 @@ class DatabaseModel(object):
         for idx, node in enumerate(self.nodes):
             if node == unode:
                 self.nodes[idx] = unode
+
+    def getMatchingSess(self, src_ip, src_port, dst_ip, dst_port):
+        for rr in self.getNodesByType('rr'):  # type: RequestRouter
+            if rr.ip == dst_ip and rr.port == dst_port:
+                for hsess in rr.handoverSessions:  # type: HandoverSession
+                    if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
+                        return hsess.popDestinationSesssion()
+        return None
 
     def __str__(self):
         return "Current database model:\n" \
