@@ -45,10 +45,8 @@ class WsCDNEndpoint(ControllerBase):
 
     @rpc_public
     def getmatchingsess(self, src_ip, src_port, dst_ip, dst_port):
-        print 'startRequest'
         matchingsess = self.db.getData().getMatchingSess(src_ip, src_port, dst_ip, dst_port)
         if matchingsess:
-            print 'stoprequest'
             return {'code': 200, 'res': {'src_ip': matchingsess.ip.src, 'src_port': matchingsess.ptcp.src_port,
                                          'dst_ip': matchingsess.ip.dst, 'dst_port': matchingsess.ptcp.dst_port}}
         else:

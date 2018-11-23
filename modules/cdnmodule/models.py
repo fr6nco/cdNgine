@@ -3,7 +3,7 @@ from ryu.lib import hub
 import logging
 from BaseHTTPServer import BaseHTTPRequestHandler
 from StringIO import StringIO
-from eventlet.semaphore import Semaphore
+import threading
 
 class Node(object):
     def __init__(self, name, ip, port, domain, **kwargs):
@@ -22,7 +22,6 @@ class Node(object):
         self.type = None
         self.domain = domain
         self.logger = logging.getLogger('Node')
-        self.writesem = Semaphore()
         super(Node, self).__init__()
 
     def factory(**kwargs):
@@ -147,19 +146,12 @@ class RequestRouter(Node):
         :return:
         """
         if not sess.serviceEngine:
-            if self.writesem.acquire(blocking=True, timeout=1):
-                print 'received lock'
-                se = self.getSe(sess.ip.src)
-                if se:
-                    print 'se set'
-                    print sess.__repr__()
-                    sess.serviceEngine = se
-                    self.writesem.release()
-                    print 'released lock'
-                else:
-                    self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+            se = self.getSe(sess.ip.src)
+            if se:
+                sess.serviceEngine = se
+                sess.event.set()
             else:
-                self.logger.error('Failed to acquire semaphore')
+                self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
 
     def setSeLoaderCallback(self, cb):
         self.getSe = cb
@@ -420,6 +412,7 @@ class TCPSesssion(object):
 class HandoverSession(TCPSesssion):
     def __init__(self, pkt, eth, ip, ptcp):
         self.serviceEngine = None
+        self.event = threading.Event()
         super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
 
     def popDestinationSesssion(self):
