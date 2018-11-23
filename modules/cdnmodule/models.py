@@ -3,9 +3,10 @@ from ryu.lib import hub
 import logging
 from BaseHTTPServer import BaseHTTPRequestHandler
 from StringIO import StringIO
+from eventlet.semaphore import Semaphore
 
 class Node(object):
-    def __init__(self, name, ip, port, **kwargs):
+    def __init__(self, name, ip, port, domain, **kwargs):
         """
         Base class for node
         Factory pattern to generate different type of nodes
@@ -19,7 +20,9 @@ class Node(object):
         self.datapath_id = None
         self.port_id = None
         self.type = None
+        self.domain = domain
         self.logger = logging.getLogger('Node')
+        self.writesem = Semaphore()
         super(Node, self).__init__()
 
     def factory(**kwargs):
@@ -37,7 +40,8 @@ class Node(object):
             'port_id': self.port_id,
             'name': self.name,
             'ip': self.ip,
-            'port': self.port
+            'port': self.port,
+            'domain': self.domain
         }
 
     def setPortInformation(self, datapath_id, port_id):
@@ -90,14 +94,14 @@ class ServiceEngine(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.info(str(sess))
+                self.logger.debug(str(sess))
                 return pkt
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.info(str(sess))
+                self.logger.debug(str(sess))
                 return pkt
 
         # Create a new TCP session if the existin session is not found
@@ -142,11 +146,20 @@ class RequestRouter(Node):
         :type sess: HandoverSession
         :return:
         """
-        se = self.getSe(sess.ip.src)
-        if se:
-            sess.serviceEngine = se
-        else:
-            self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+        if not sess.serviceEngine:
+            if self.writesem.acquire(blocking=True, timeout=1):
+                print 'received lock'
+                se = self.getSe(sess.ip.src)
+                if se:
+                    print 'se set'
+                    print sess.__repr__()
+                    sess.serviceEngine = se
+                    self.writesem.release()
+                    print 'released lock'
+                else:
+                    self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+            else:
+                self.logger.error('Failed to acquire semaphore')
 
     def setSeLoaderCallback(self, cb):
         self.getSe = cb
@@ -171,7 +184,7 @@ class RequestRouter(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.info(str(sess))
+                self.logger.debug(str(sess))
                 return pkt
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
@@ -350,16 +363,16 @@ class TCPSesssion(object):
             if from_client:
                 if self.server_state is None:
                     if ptcp.bits & tcp.TCP_SYN:
-                        self.logger.info('Retransmission occured for ' + str(self))
+                        self.logger.debug('Retransmission occured for ' + str(self))
                     elif ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                 elif self.server_state == self.SERVER_STATE_SYN_RCVD:
                     if ptcp.bits & tcp.TCP_SYN:
-                        self.logger.info('Retransmission from client occurred for ' + str(self))
+                        self.logger.debug('Retransmission from client occurred for ' + str(self))
                     elif ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                     elif ptcp.bits & tcp.TCP_ACK:
-                        self.logger.info('Transitioning to established state ' + str(self))
+                        self.logger.debug('Transitioning to established state ' + str(self))
                         self.client_state = self.STATE_ESTABLISHED
                         self.server_state = self.STATE_ESTABLISHED
                         self.state = self.STATE_ESTABLISHED
@@ -371,10 +384,10 @@ class TCPSesssion(object):
                         self._handleReset()
                     elif ptcp.bits & (tcp.TCP_SYN | tcp.TCP_ACK) == (tcp.TCP_SYN | tcp.TCP_ACK):
                         if self.server_state is None:
-                            self.logger.info('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
+                            self.logger.debug('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                             self.server_state = self.SERVER_STATE_SYN_RCVD
                         else:
-                            self.logger.info('Retransmission from server occurred on SYN_ACK' + str(self))
+                            self.logger.debug('Retransmission from server occurred on SYN_ACK' + str(self))
 
         elif self.state == self.STATE_ESTABLISHED:
             if from_client:
@@ -406,17 +419,25 @@ class TCPSesssion(object):
 
 class HandoverSession(TCPSesssion):
     def __init__(self, pkt, eth, ip, ptcp):
-        super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
         self.serviceEngine = None
+        super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
 
     def popDestinationSesssion(self):
         if not self.serviceEngine:
+            print 'serviceEngine is not set'
+            print self.__repr__()
             return None
         for sess in self.serviceEngine.sessions: # type: TCPSesssion
             if sess.state == TCPSesssion.STATE_ESTABLISHED and not sess.handoverRequested:
                 sess.handoverRequested = True
                 return sess
         return None
+
+    def __str__(self):
+        return "Session from " + self.ip.src + ':' + str(self.ptcp.src_port) + \
+               ' to ' + self.ip.dst + ':' + str(self.ptcp.dst_port) + ' in state ' + self.state if not self.serviceEngine else "Session from " + self.ip.src + ':' + str(self.ptcp.src_port) + \
+               ' to ' + self.ip.dst + ':' + str(self.ptcp.dst_port) + ' in state ' + self.state + ' SE attached ' + str(self.serviceEngine)
+
 
 
 class HttpRequest(BaseHTTPRequestHandler):

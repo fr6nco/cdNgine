@@ -7,7 +7,8 @@
         "port": 8082,
         "type": "rr",
         "datapath_id": null,
-        "port_id": null
+        "port_id": null,
+        "domain": "cdn.example.com"
       },
       {
         "name": "se1",
@@ -15,7 +16,8 @@
         "port": 80,
         "type": "se",
         "datapath_id": null,
-        "port_id": null
+        "port_id": null,
+        "domain": "se1.cdn.example.com"
       }
     ]
   }

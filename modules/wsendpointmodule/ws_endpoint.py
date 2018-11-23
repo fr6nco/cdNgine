@@ -33,20 +33,22 @@ class WsCDNEndpoint(ControllerBase):
 
         for rr in rrs:  # type: RequestRouter
             if rr.ip == ip and rr.port == port:
-                return {'code': 200, 'res': rr.serialize()['name']}
+                return {'code': 200, 'res': {'name': rr.serialize()['name'], 'domain': rr.serialize()['domain']}}
         return {'code': 404, 'res': 'rr not found'}
 
     @rpc_public
     def getses(self):
         self.logger.info('Request router requesting Service Engines')
         ses = self.db.getData().getNodesByType('se')
-        return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port']} for x in map(lambda x: x.serialize(), ses)]}
+        return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port'], 'domain': x['domain']}
+                                     for x in map(lambda y: y.serialize(), ses)]}
 
     @rpc_public
     def getmatchingsess(self, src_ip, src_port, dst_ip, dst_port):
-        self.logger.info('Request Rotuer requesting handover destination')
+        print 'startRequest'
         matchingsess = self.db.getData().getMatchingSess(src_ip, src_port, dst_ip, dst_port)
         if matchingsess:
+            print 'stoprequest'
             return {'code': 200, 'res': {'src_ip': matchingsess.ip.src, 'src_port': matchingsess.ptcp.src_port,
                                          'dst_ip': matchingsess.ip.dst, 'dst_port': matchingsess.ptcp.dst_port}}
         else:

@@ -29,9 +29,15 @@ class DatabaseModel(object):
     def getMatchingSess(self, src_ip, src_port, dst_ip, dst_port):
         for rr in self.getNodesByType('rr'):  # type: RequestRouter
             if rr.ip == dst_ip and rr.port == dst_port:
-                for hsess in rr.handoverSessions:  # type: HandoverSession
-                    if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
-                        return hsess.popDestinationSesssion()
+                if rr.writesem.acquire(blocking=True, timeout=1):
+                    print 'received lock'
+                    for hsess in rr.handoverSessions:  # type: HandoverSession
+                        if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
+                            sess = hsess.popDestinationSesssion()
+                            rr.writesem.release()
+                            print 'released lock'
+                            return sess
+                    rr.writesem.release()
         return None
 
     def __str__(self):
