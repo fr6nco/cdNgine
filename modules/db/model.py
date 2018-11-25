@@ -31,6 +31,8 @@ class DatabaseModel(object):
             if rr.ip == dst_ip and rr.port == dst_port:
                 for hsess in rr.handoverSessions:  # type: HandoverSession
                     if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
+                        # This is required, because sometimes the data in threads are not synchronized
+                        # and the SE won't be set even though it is set
                         hsess.event.wait(timeout=1)
                         sess = hsess.popDestinationSesssion()
                         return sess

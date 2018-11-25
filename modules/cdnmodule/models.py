@@ -43,6 +43,9 @@ class Node(object):
             'domain': self.domain
         }
 
+    def setHandoverCallback(self, fn):
+        return
+
     def setPortInformation(self, datapath_id, port_id):
         self.datapath_id = datapath_id
         self.port_id = port_id
@@ -54,7 +57,7 @@ class ServiceEngine(Node):
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
         super(ServiceEngine, self).__init__(**kwargs)
         self.type = 'se'
-
+        self.handover = None
 
     def __str__(self):
         return 'Service Engine node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
@@ -65,6 +68,12 @@ class ServiceEngine(Node):
                self.name == other.name and \
                self.ip == other.ip and \
                self.port == other.port
+
+    def setHandoverCallback(self, fn):
+        self.handover = fn
+
+    def _performHandover(self, sess):
+        self.handover(sess)
 
     def _garbageCollector(self):
         for sess in self.sessions:  # type: TCPSesssion
@@ -101,11 +110,15 @@ class ServiceEngine(Node):
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
                 self.logger.debug(str(sess))
+
+                if (sess.handoverReady):
+                    self.logger.info('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
+                    self._performHandover(sess)
                 return pkt
 
         # Create a new TCP session if the existin session is not found
         if ptcp.bits & tcp.TCP_SYN:
-            sess = TCPSesssion(pkt, eth, ip, ptcp)
+            sess = TCPSesssion(pkt, eth, ip, ptcp, self)
             self.sessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
@@ -153,8 +166,8 @@ class RequestRouter(Node):
             else:
                 self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
 
-    def setSeLoaderCallback(self, cb):
-        self.getSe = cb
+    def setHandoverCallback(self, fn):
+        self.getSe = fn
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -191,7 +204,7 @@ class RequestRouter(Node):
 
         # Create a new TCP session if the existin session is not found
         if ptcp.bits & tcp.TCP_SYN:
-            sess = HandoverSession(pkt, eth, ip, ptcp)
+            sess = HandoverSession(pkt, eth, ip, ptcp, self)
             self.handoverSessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
@@ -223,7 +236,7 @@ class TCPSesssion(object):
     RESET_TIMER = 1
     GARBAGE_TIMER = 30 + QUIET_TIMER  # This timer is used to handle problematic closes
 
-    def __init__(self, pkt, eth, ip, ptcp):
+    def __init__(self, pkt, eth, ip, ptcp, parentNode):
         """
 
         :param pkt:
@@ -239,7 +252,6 @@ class TCPSesssion(object):
 
 
         self.pkt_syn = pkt
-
         self.eth = eth
         self.ip = ip
         self.ptcp = ptcp
@@ -247,6 +259,7 @@ class TCPSesssion(object):
         self.client_state = self.CLIENT_STATE_SYN_SENT
         self.server_state = None
         self.src_seq = ptcp.seq
+        self.dst_seq = None
 
         self.timeoutTimer = hub.spawn_after(self.TIMEOUT_TIMER, self._handleTimeout)
         self.quietTimer = None
@@ -255,6 +268,8 @@ class TCPSesssion(object):
         self.request_size = 0
         self.handoverReady = False
         self.handoverRequested = False
+        self.handoverPair = None
+        self.parentNode = parentNode
 
         self.upstream_payload = ""
 
@@ -364,7 +379,7 @@ class TCPSesssion(object):
                     elif ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                     elif ptcp.bits & tcp.TCP_ACK:
-                        self.logger.debug('Transitioning to established state ' + str(self))
+                        self.logger.info('Transitioning to established state ' + str(self))
                         self.client_state = self.STATE_ESTABLISHED
                         self.server_state = self.STATE_ESTABLISHED
                         self.state = self.STATE_ESTABLISHED
@@ -378,6 +393,7 @@ class TCPSesssion(object):
                         if self.server_state is None:
                             self.logger.debug('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                             self.server_state = self.SERVER_STATE_SYN_RCVD
+                            self.dst_seq = ptcp.seq
                         else:
                             self.logger.debug('Retransmission from server occurred on SYN_ACK' + str(self))
 
@@ -410,19 +426,21 @@ class TCPSesssion(object):
 
 
 class HandoverSession(TCPSesssion):
-    def __init__(self, pkt, eth, ip, ptcp):
+    def __init__(self, pkt, eth, ip, ptcp, parentNode):
         self.serviceEngine = None
         self.event = threading.Event()
-        super(HandoverSession, self).__init__(pkt, eth, ip, ptcp)
+        super(HandoverSession, self).__init__(pkt, eth, ip, ptcp, parentNode)
 
     def popDestinationSesssion(self):
         if not self.serviceEngine:
-            print 'serviceEngine is not set'
-            print self.__repr__()
+            self.logger.error('serviceEngine is not set')
             return None
-        for sess in self.serviceEngine.sessions: # type: TCPSesssion
+        for sess in self.serviceEngine.sessions:  # type: TCPSesssion
             if sess.state == TCPSesssion.STATE_ESTABLISHED and not sess.handoverRequested:
                 sess.handoverRequested = True
+                # Set pointers to each other for faster handover manipulation
+                self.handoverPair = sess
+                sess.handoverPair = self
                 return sess
         return None
 

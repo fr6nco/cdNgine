@@ -13,7 +13,7 @@ from ryu.ofproto import inet
 from shared import ofprotoHelper
 from modules.db.databaseEvents import EventDatabaseQuery, SetNodeInformationEvent
 from modules.db.databasemodule import DatabaseModule
-from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter
+from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter, TCPSesssion, HandoverSession
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
@@ -85,7 +85,44 @@ class CDNModule(app_manager.RyuApp):
 
         for node in self.nodes:
             if node.type == 'rr':
-                node.setSeLoaderCallback(self.get_closest_se_to_ip)
+                node.setHandoverCallback(self.get_closest_se_to_ip)
+            if node.type == 'se':
+                node.setHandoverCallback(self.perform_handover)
+
+    def perform_handover(self, sess):
+        """
+
+        :param sess:
+        :type sess: TCPSesssion
+        :return:
+        """
+        hsess = sess.handoverPair  # type: HandoverSession
+        self.logger.info('DOING HANDOVER IN CDN MODULE. DOING MAGIC')
+
+        self.logger.info('Client established connection to RR:')
+        self.logger.info('{}:{} -> {}.{}'.format(hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port))
+        self.logger.info('Client sent HTTP Request')
+        self.logger.info(hsess.httpRequest.raw_requestline)
+        self.logger.info(hsess.httpRequest.headers)
+
+        self.logger.info('CDN Engine decided to handover this session to service engine:')
+        self.logger.info(str(hsess.serviceEngine))
+
+        self.logger.info('RR pre established a Sesssion to the chosen SE:')
+        self.logger.info('{}:{} -> {}.{}'.format(sess.ip.src, sess.ptcp.src_port, sess.ip.dst, sess.ptcp.dst_port))
+
+        self.logger.info('After processing the Request Router sent a HTTP request to this SE which is')
+        self.logger.info(sess.httpRequest.raw_requestline)
+        self.logger.info(sess.httpRequest.headers)
+
+        self.logger.info('Source SEQ on client-RR leg: %d', hsess.src_seq)
+        self.logger.info('Dest SEQ on client-RR leg: %d', hsess.dst_seq)
+        self.logger.info('Source SEQ on RR-SE leg: %d', sess.src_seq)
+        self.logger.info('Dest SEQ on RR-SE leg: %d', sess.dst_seq)
+
+        self.logger.info('Now do the maths and handover those')
+
+
 
     def get_closest_se_to_ip(self, ip):
         switches = [dp for dp in self.switches.dps]
