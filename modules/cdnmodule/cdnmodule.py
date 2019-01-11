@@ -16,7 +16,9 @@ from modules.db.databasemodule import DatabaseModule
 from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter, TCPSesssion, HandoverSession
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
-from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline
+from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathRequest, EventShortestPathReply
+from modules.forwardingmodule.models import Path
+
 from modules.wsendpointmodule.ws_endpoint import WsCDNEndpoint
 
 import networkx as nx
@@ -36,7 +38,10 @@ class CDNModule(app_manager.RyuApp):
                 help='cookie to install'),
         cfg.IntOpt('node_priority',
                 default=1,
-                help='Priority to install CDN engine matching flows')
+                help='Priority to install CDN engine matching flows'),
+        cfg.IntOpt('handover_priority',
+                default=2,
+                help='Priority to use for handover flows')
     ]
 
     _CONTEXTS = {
@@ -80,6 +85,62 @@ class CDNModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.node_priority, match, actions, CONF.cdn.table, CONF.cdn.cookie)
 
+    def _install_rewrite_dst_action_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, out_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src, tcp_src=port_src, ipv4_dst=ip_dst_old, tcp_dst=port_dst_old)
+
+        actions = [
+            parser.OFPActionSetField(ipv4_dst=ip_dst_new),
+            parser.OFPActionSetField(tcp_dst=port_dst_new),
+            parser.OFPActionOutput(out_port)
+        ]
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+
+    def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, out_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src_old, tcp_src=port_src_old, ipv4_dst=ip_dst, tcp_dst=port_dst)
+
+        actions = [
+            parser.OFPActionSetField(ipv4_src=ip_src_new),
+            parser.OFPActionSetField(tcp_src=port_src_new),
+            parser.OFPActionOutput(out_port)
+        ]
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+
+    def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, out_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src, tcp_src=port_src, ipv4_dst=ip_dst_old, tcp_dst=port_dst_old)
+
+        actions = [
+            parser.OFPActionSetField(ipv4_dst=ip_dst_new),
+            parser.OFPActionSetField(tcp_dst=port_dst_new),
+            parser.OFPActionIncSeq(inc_seq),
+            parser.OFPActionIncAck(inc_ack),
+            parser.OFPActionOutput(out_port)
+        ]
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+
+    def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, out_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src_old, tcp_src=port_src_old, ipv4_dst=ip_dst, tcp_dst=port_dst)
+
+        actions = [
+            parser.OFPActionSetField(ipv4_src=ip_src_new),
+            parser.OFPActionSetField(tcp_src=port_src_new),
+            parser.OFPActionIncSeq(inc_seq),
+            parser.OFPActionIncAck(inc_ack),
+            parser.OFPActionOutput(out_port)
+        ]
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+
     def _update_nodes(self):
         self.nodes = self.db.getData().getNodes()
 
@@ -121,6 +182,75 @@ class CDNModule(app_manager.RyuApp):
         self.logger.info('Dest SEQ on RR-SE leg: %d', sess.dst_seq)
 
         self.logger.info('Now do the maths and handover those')
+
+        ## Handover procedure
+        ## Request FW to isntall path from CL to SE <->
+        ## UPDATE Flow mod on FW-acc switch
+        ## Update Flow mod on SE-core switch
+
+        spev = EventShortestPathRequest(hsess.ip.src, hsess.serviceEngine.ip)
+        spev.dst = 'ForwardingModule'
+        spev.sync = True
+
+        pathres = self.send_request(spev)  # type: EventShortestPathReply
+        if pathres.path:
+            self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
+
+            self.logger.info('FORWARD path')
+            for p in pathres.path.fw:
+                self.logger.info(p)
+
+            self.logger.info('BACKWARD path')
+            for p in pathres.path.bw:
+                self.logger.info(p)
+
+            # Rewrite DST IP and PORT from Client to RR -> SE on ACC switch in FW direction
+            p = pathres.path.fw[1]  # 2nd entry on forwardp path
+            for id, dp in self.switches.dps.iteritems():  # type: Datapath
+                if id == p['src']:
+                    self._install_rewrite_dst_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, p['port'])
+
+            p = pathres.path.bw[0]  # 1st entry on backward path
+            for id, dp in self.switches.dps.iteritems():  # type: Datapath
+                if id == p['src']:
+                    self._install_rewrite_src_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.ip.src, hsess.ptcp.src_port, p['port'])
+
+            ## Calculate seq ack diffs
+            # Sinc_cs = ((2^32) + (Srs - Scr) + (Rrs - Rcr)) %% (2^32)
+            self.logger.info('REQUEST SIZE RS %d CR %d', sess.request_size, hsess.request_size)
+            # seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq) + (sess.request_size - hsess.request_size)) % (2 ** 32)
+            seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq)) % (2 ** 32)
+            self.logger.info('SEQ CS %d', seq_cs)
+
+            # Ainc_sc = ((2 ^ 32) - Sinc_cs) % % (2 ^ 32)
+            ack_sc = ((2 ** 32) - seq_cs) % (2**32)
+            self.logger.info('ACK SC %d', ack_sc)
+
+            # Sinc_sc = ((2 ^ 32) + (Src - Ssr)) % % (2 ^ 32)
+            seq_sc = ((2 ** 32) + (hsess.dst_seq)) % (2 ** 32)
+            self.logger.info('SEQ SC %d', seq_sc)
+
+            # Ainc_cs = ((2 ^ 32) - Sinc_sc) % % (2 ^ 32)
+            ack_cs = ((2 ** 32) - seq_sc) % (2 ** 32)
+            self.logger.info('ACK CS %d', ack_cs)
+
+
+            # Rewrite SRC IP and PORT from Client -> RR to SE and modify SEQ ACK on CR sw in FW direction
+            p = pathres.path.fw[-1]
+            for id, dp in self.switches.dps.iteritems():  # type: Datapath
+                if id == p['src']:
+                    # self._install_rewrite_src_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, p['port'])
+                    self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, p['port'])
+
+            # Rewrite DST IP and PORT from SE to RR -> Client and modify SEQ ACK on CR sw in BW direction
+            p = pathres.path.bw[-2]
+            for id, dp in self.switches.dps.iteritems():  # type: Datapath
+                if id == p['src']:
+                    # self._install_rewrite_dst_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, p['port'])
+                    self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, p['port'])
+
+        else:
+            self.logger.error('Failed to retrieve path from Client to SE')
 
 
 
