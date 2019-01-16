@@ -97,8 +97,6 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
-        self.logger.info('FLOW MOD REQUESTED')
-
 
     def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, out_port):
         ofproto = datapath.ofproto
@@ -112,8 +110,6 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
-        self.logger.info('FLOW MOD REQUESTED')
-
 
     def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, out_port):
         ofproto = datapath.ofproto
@@ -129,8 +125,6 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
-        self.logger.info('FLOW MOD REQUESTED')
-
 
     def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, out_port):
         ofproto = datapath.ofproto
@@ -146,8 +140,6 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
-        self.logger.info('FLOW MOD REQUESTED')
-
 
     def _update_nodes(self):
         self.nodes = self.db.getData().getNodes()
@@ -343,26 +335,12 @@ class CDNModule(app_manager.RyuApp):
         ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
 
-
-        self.logger.debug('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
-        for protocol in pkt:
-            if not hasattr(protocol, 'protocol_name'):
-                pload = protocol  # extracting payload
-                self.logger.info('Incoming packet with payload')
-                self.logger.info(pload)
-
         node = self._get_node_from_packet(ip, ptcp)  # type: Node
-
-        self.logger.info('Incoming packet in CDN pipeline for node %s', node)
 
         if node:
             pkt = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
-            for protocol in pkt:
-                if not hasattr(protocol, 'protocol_name'):
-                    pload = protocol  # extracting payload
-                    self.logger.info('Sending FW module requested on pkt with pload')
-                    self.logger.info(pload)
+
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {}'.format(ip))

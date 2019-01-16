@@ -15,7 +15,6 @@ from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, E
 from modules.db.databasemodule import DatabaseModule
 
 import networkx as nx
-import threading
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -230,8 +229,6 @@ class ForwardingModule(app_manager.RyuApp):
                     if out_port:
                         self.logger.debug('Doing a Packet out on forwarding request')
                         self.ofHelper.do_packet_out(ev.data, ev.datapath, out_port)
-                        self.logger.info(threading.current_thread())
-                        self.logger.info('PACKET OUT REQUESTED')
                     else:
                         self.logger.error('Failed to retrieve next hop port')
 
