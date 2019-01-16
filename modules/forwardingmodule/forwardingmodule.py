@@ -15,6 +15,7 @@ from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, E
 from modules.db.databasemodule import DatabaseModule
 
 import networkx as nx
+import threading
 
 from ryu import cfg
 CONF = cfg.CONF
@@ -56,6 +57,7 @@ class ForwardingModule(app_manager.RyuApp):
         self.switches = kwargs['switches']
         self.dpset = kwargs['dpset']
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
+        self.installed_paths = []
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -89,12 +91,18 @@ class ForwardingModule(app_manager.RyuApp):
         :type path: Path
         :return:
         """
-        for rule in path.fw:
-            if isinstance(rule['src'], int):
-                self._add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
-        for rule in path.bw:
-            if isinstance(rule['src'], int):
-                self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
+
+        if (path.src_ip, path.dst_ip) not in self.installed_paths:
+            for rule in path.fw:
+                if isinstance(rule['src'], int):
+                    self._add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
+            self.installed_paths.append((path.src_ip, path.dst_ip))
+
+        if (path.dst_ip, path.src_ip) not in self.installed_paths:
+            for rule in path.bw:
+                if isinstance(rule['src'], int):
+                    self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
+            self.installed_paths.append((path.dst_ip, path.src_ip))
 
     def _get_shortest_path(self, src_ip, dst_ip):
         switches = [dp for dp in self.switches.dps]
@@ -222,6 +230,8 @@ class ForwardingModule(app_manager.RyuApp):
                     if out_port:
                         self.logger.debug('Doing a Packet out on forwarding request')
                         self.ofHelper.do_packet_out(ev.data, ev.datapath, out_port)
+                        self.logger.info(threading.current_thread())
+                        self.logger.info('PACKET OUT REQUESTED')
                     else:
                         self.logger.error('Failed to retrieve next hop port')
 

@@ -3,7 +3,7 @@
     "nodes": [
       {
         "name": "rr1",
-        "ip": "10.10.0.5",
+        "ip": "10.11.0.5",
         "port": 8082,
         "type": "rr",
         "datapath_id": null,
@@ -12,7 +12,7 @@
       },
       {
         "name": "se1",
-        "ip": "10.10.0.2",
+        "ip": "10.11.0.2",
         "port": 80,
         "type": "se",
         "datapath_id": null,

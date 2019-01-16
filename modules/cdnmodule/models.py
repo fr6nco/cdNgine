@@ -103,17 +103,19 @@ class ServiceEngine(Node):
                     sess.ptcp.dst_port == ptcp.dst_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
                 self.logger.debug(str(sess))
+                if (sess.handoverReady and not sess.handovered):
+                    self.logger.info('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
+                    self._performHandover(sess)
+                    sess.handovered = True
+                else:
+                    self.logger.info('This packet was not supposed to show up here in the performhandover stuff')
                 return pkt
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.debug(str(sess))
-
-                if (sess.handoverReady):
-                    self.logger.info('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
-                    self._performHandover(sess)
+                self.logger.info(str(sess))
                 return pkt
 
         # Create a new TCP session if the existin session is not found
@@ -198,7 +200,7 @@ class RequestRouter(Node):
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
 
                 if sess.handoverReady:
-                    self.logger.info('Starting handover for ' + str(sess))
+                    self.logger.info('Preparing suitable SE for ' + str(sess))
                     self._performHandover(sess)
                 return pkt
 
@@ -268,6 +270,7 @@ class TCPSesssion(object):
         self.request_size = 0
         self.handoverReady = False
         self.handoverRequested = False
+        self.handovered = False
         self.handoverPair = None
         self.parentNode = parentNode
 

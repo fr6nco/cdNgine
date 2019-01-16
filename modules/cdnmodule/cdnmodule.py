@@ -97,6 +97,8 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.logger.info('FLOW MOD REQUESTED')
+
 
     def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, out_port):
         ofproto = datapath.ofproto
@@ -110,6 +112,8 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.logger.info('FLOW MOD REQUESTED')
+
 
     def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, out_port):
         ofproto = datapath.ofproto
@@ -125,6 +129,8 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.logger.info('FLOW MOD REQUESTED')
+
 
     def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, out_port):
         ofproto = datapath.ofproto
@@ -140,6 +146,8 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.logger.info('FLOW MOD REQUESTED')
+
 
     def _update_nodes(self):
         self.nodes = self.db.getData().getNodes()
@@ -194,8 +202,6 @@ class CDNModule(app_manager.RyuApp):
 
         pathres = self.send_request(spev)  # type: EventShortestPathReply
         if pathres.path:
-            self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
-
             self.logger.info('FORWARD path')
             for p in pathres.path.fw:
                 self.logger.info(p)
@@ -218,8 +224,7 @@ class CDNModule(app_manager.RyuApp):
             ## Calculate seq ack diffs
             # Sinc_cs = ((2^32) + (Srs - Scr) + (Rrs - Rcr)) %% (2^32)
             self.logger.info('REQUEST SIZE RS %d CR %d', sess.request_size, hsess.request_size)
-            # seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq) + (sess.request_size - hsess.request_size)) % (2 ** 32)
-            seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq)) % (2 ** 32)
+            seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq) + (sess.request_size - hsess.request_size)) % (2 ** 32)
             self.logger.info('SEQ CS %d', seq_cs)
 
             # Ainc_sc = ((2 ^ 32) - Sinc_cs) % % (2 ^ 32)
@@ -227,28 +232,26 @@ class CDNModule(app_manager.RyuApp):
             self.logger.info('ACK SC %d', ack_sc)
 
             # Sinc_sc = ((2 ^ 32) + (Src - Ssr)) % % (2 ^ 32)
-            seq_sc = ((2 ** 32) + (hsess.dst_seq)) % (2 ** 32)
+            seq_sc = ((2 ** 32) + (hsess.dst_seq - sess.dst_seq)) % (2 ** 32)
             self.logger.info('SEQ SC %d', seq_sc)
 
             # Ainc_cs = ((2 ^ 32) - Sinc_sc) % % (2 ^ 32)
             ack_cs = ((2 ** 32) - seq_sc) % (2 ** 32)
             self.logger.info('ACK CS %d', ack_cs)
 
-
             # Rewrite SRC IP and PORT from Client -> RR to SE and modify SEQ ACK on CR sw in FW direction
             p = pathres.path.fw[-1]
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    # self._install_rewrite_src_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, p['port'])
                     self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, p['port'])
 
             # Rewrite DST IP and PORT from SE to RR -> Client and modify SEQ ACK on CR sw in BW direction
             p = pathres.path.bw[-2]
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    # self._install_rewrite_dst_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, p['port'])
                     self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, p['port'])
 
+            self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
         else:
             self.logger.error('Failed to retrieve path from Client to SE')
 
@@ -340,13 +343,26 @@ class CDNModule(app_manager.RyuApp):
         ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
 
+
         self.logger.debug('CDN pipeline on packet ' + str(ip) + ' ' + str(ptcp))
+        for protocol in pkt:
+            if not hasattr(protocol, 'protocol_name'):
+                pload = protocol  # extracting payload
+                self.logger.info('Incoming packet with payload')
+                self.logger.info(pload)
 
         node = self._get_node_from_packet(ip, ptcp)  # type: Node
+
+        self.logger.info('Incoming packet in CDN pipeline for node %s', node)
 
         if node:
             pkt = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
+            for protocol in pkt:
+                if not hasattr(protocol, 'protocol_name'):
+                    pload = protocol  # extracting payload
+                    self.logger.info('Sending FW module requested on pkt with pload')
+                    self.logger.info(pload)
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {}'.format(ip))
