@@ -48,6 +48,16 @@ class ofProtoHelperGeneric():
 
         datapath.send_msg(mod)
 
+    def add_drop_flow(self, datapath, priority, match, table_id):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
+
+        msg = parser.OFPFlowMod(datapath=datapath, table_id=table_id, priority=priority, match=match, instructions=inst)
+
+        datapath.send_msg(msg)
+
     def do_packet_out(self, data, datapath, port):
         """
         Does a packet out with no buffer

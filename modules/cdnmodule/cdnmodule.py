@@ -85,39 +85,42 @@ class CDNModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.node_priority, match, actions, CONF.cdn.table, CONF.cdn.cookie)
 
-    def _install_rewrite_dst_action_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, out_port):
+    def _install_rewrite_dst_action_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, new_dst_mac, out_port):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src, tcp_src=port_src, ipv4_dst=ip_dst_old, tcp_dst=port_dst_old)
 
         actions = [
+            parser.OFPActionSetField(eth_dst=new_dst_mac),
             parser.OFPActionSetField(ipv4_dst=ip_dst_new),
             parser.OFPActionSetField(tcp_dst=port_dst_new),
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
 
-    def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, out_port):
+    def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, new_src_mac, out_port):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src_old, tcp_src=port_src_old, ipv4_dst=ip_dst, tcp_dst=port_dst)
 
         actions = [
+            parser.OFPActionSetField(eth_src=new_src_mac),
             parser.OFPActionSetField(ipv4_src=ip_src_new),
             parser.OFPActionSetField(tcp_src=port_src_new),
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
 
-    def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, out_port):
+    def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, new_dst_mac, out_port):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src, tcp_src=port_src, ipv4_dst=ip_dst_old, tcp_dst=port_dst_old)
 
         actions = [
+            parser.OFPActionSetField(eth_dst=new_dst_mac),
             parser.OFPActionSetField(ipv4_dst=ip_dst_new),
             parser.OFPActionSetField(tcp_dst=port_dst_new),
             parser.OFPActionIncSeq(inc_seq),
@@ -126,13 +129,14 @@ class CDNModule(app_manager.RyuApp):
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
 
-    def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, out_port):
+    def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, new_src_mac, out_port):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=ip_src_old, tcp_src=port_src_old, ipv4_dst=ip_dst, tcp_dst=port_dst)
 
         actions = [
+            parser.OFPActionSetField(eth_src=new_src_mac),
             parser.OFPActionSetField(ipv4_src=ip_src_new),
             parser.OFPActionSetField(tcp_src=port_src_new),
             parser.OFPActionIncSeq(inc_seq),
@@ -140,6 +144,15 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionOutput(out_port)
         ]
         self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+
+    def _mitigate_tcp_session(self, datapath, src_ip, dst_ip, src_port, dst_port):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=src_ip, tcp_src=src_port, ipv4_dst=dst_ip, tcp_dst=dst_port)
+
+        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table)
+
 
     def _update_nodes(self):
         self.nodes = self.db.getData().getNodes()
@@ -149,6 +162,12 @@ class CDNModule(app_manager.RyuApp):
                 node.setHandoverCallback(self.get_closest_se_to_ip)
             if node.type == 'se':
                 node.setHandoverCallback(self.perform_handover)
+            node.setMitigateCallback(self.mitigatecb)
+
+    def mitigatecb(self, datapath_id, src_ip, dst_ip, src_port, dst_port):
+        for id, dp in self.switches.dps.iteritems():  # type: Datapath
+            if id == datapath_id:
+                self._mitigate_tcp_session(dp, src_ip, dst_ip, src_port, dst_port)
 
     def perform_handover(self, sess):
         """
@@ -206,12 +225,12 @@ class CDNModule(app_manager.RyuApp):
             p = pathres.path.fw[1]  # 2nd entry on forwardp path
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    self._install_rewrite_dst_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, p['port'])
+                    self._install_rewrite_dst_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.eth.dst, p['port'])
 
             p = pathres.path.bw[0]  # 1st entry on backward path
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    self._install_rewrite_src_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.ip.src, hsess.ptcp.src_port, p['port'])
+                    self._install_rewrite_src_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.ip.src, hsess.ptcp.src_port, hsess.eth.dst, p['port'])
 
             ## Calculate seq ack diffs
             # Sinc_cs = ((2^32) + (Srs - Scr) + (Rrs - Rcr)) %% (2^32)
@@ -235,13 +254,20 @@ class CDNModule(app_manager.RyuApp):
             p = pathres.path.fw[-1]
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, p['port'])
+                    self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, sess.eth.src, p['port'])
 
             # Rewrite DST IP and PORT from SE to RR -> Client and modify SEQ ACK on CR sw in BW direction
             p = pathres.path.bw[-2]
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
                 if id == p['src']:
-                    self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, p['port'])
+                    self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, hsess.eth.src, p['port'])
+
+            rr = hsess.parentNode  # type: RequestRouter
+            for id, dp in self.switches.dps.iteritems():
+                if id == rr.datapath_id:
+                    self._mitigate_tcp_session(dp, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
+                    self._mitigate_tcp_session(dp, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
+                    self.logger.info('Mitigating communication from RR towards network')
 
             self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
         else:
@@ -315,6 +341,24 @@ class CDNModule(app_manager.RyuApp):
                 return node
         return None
 
+    def _remove_tcp_options(self, pkt):
+        eth = pkt.get_protocols(ethernet.ethernet)[0]  # type: ethernet.ethernet
+        ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
+        ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
+
+        if(ptcp.has_flags(tcp.TCP_SYN)):
+            self.logger.info('Removing TCP Options')
+            new_ip = ipv4.ipv4(version=ip.version, header_length=5, tos=ip.tos, total_length=0, identification=ip.identification, flags=ip.flags, offset=ip.offset, ttl=ip.ttl, proto=ip.proto, csum=0, src=ip.src, dst=ip.dst, option=ip.option)
+            new_ptcp = tcp.tcp(src_port=ptcp.src_port, dst_port=ptcp.dst_port, seq=ptcp.seq, ack=ptcp.ack, offset=0, bits=ptcp.bits, window_size=ptcp.window_size, csum=0, urgent=ptcp.urgent, option=None)
+            new_pkt = packet.Packet()
+            new_pkt.add_protocol(eth)
+            new_pkt.add_protocol(new_ip)
+            new_pkt.add_protocol(new_ptcp)
+            new_pkt.serialize()
+
+            return new_pkt
+        else:
+            return pkt
 
     @set_ev_cls(EventCDNPipeline, None)
     def cdnHandlingRequest(self, ev):
@@ -331,9 +375,14 @@ class CDNModule(app_manager.RyuApp):
         pkt = packet.Packet(ev.data)
         datapath = ev.datapath  # type: Datapath
 
+        # Removes all TCP options on SYN packets
+        pkt = self._remove_tcp_options(pkt)
+
         eth = pkt.get_protocols(ethernet.ethernet)[0]  # type: ethernet.ethernet
         ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
+
+        self.logger.info(pkt)
 
         node = self._get_node_from_packet(ip, ptcp)  # type: Node
 
@@ -341,6 +390,5 @@ class CDNModule(app_manager.RyuApp):
             pkt = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
-
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {}'.format(ip))

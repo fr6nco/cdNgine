@@ -22,6 +22,7 @@ class Node(object):
         self.type = None
         self.domain = domain
         self.logger = logging.getLogger('Node')
+        self.mitigate = None
         super(Node, self).__init__()
 
     def factory(**kwargs):
@@ -45,6 +46,9 @@ class Node(object):
 
     def setHandoverCallback(self, fn):
         return
+
+    def setMitigateCallback(self, fn):
+        self.mitigate = fn
 
     def setPortInformation(self, datapath_id, port_id):
         self.datapath_id = datapath_id
@@ -107,8 +111,7 @@ class ServiceEngine(Node):
                     self.logger.info('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
                     self._performHandover(sess)
                     sess.handovered = True
-                else:
-                    self.logger.info('This packet was not supposed to show up here in the performhandover stuff')
+
                 return pkt
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
@@ -164,6 +167,10 @@ class RequestRouter(Node):
             se = self.getSe(sess.ip.src)
             if se:
                 sess.serviceEngine = se
+                self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
+                self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
+                self.logger.info('Mitigating all corresponding communication from client to Request routed and vice versa')
+
                 sess.event.set()
             else:
                 self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
