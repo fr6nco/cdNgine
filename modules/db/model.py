@@ -1,5 +1,8 @@
-from modules.cdnmodule.models import RequestRouter, ServiceEngine, Node, HandoverSession, TCPSesssion
-
+from modules.cdnmodule.models.node import Node
+from modules.cdnmodule.models.ServiceEngine import ServiceEngine
+from modules.cdnmodule.models.RequestRouter import RequestRouter
+from modules.cdnmodule.models.TCPSession import TCPSesssion
+from modules.cdnmodule.models.HandoverSesssion import HandoverSession
 
 class DatabaseModel(object):
     """

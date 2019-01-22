@@ -13,7 +13,13 @@ from ryu.ofproto import inet
 from shared import ofprotoHelper
 from modules.db.databaseEvents import EventDatabaseQuery, SetNodeInformationEvent
 from modules.db.databasemodule import DatabaseModule
-from modules.cdnmodule.models import Node, ServiceEngine, RequestRouter, TCPSesssion, HandoverSession
+
+from modules.cdnmodule.models.node import Node
+from modules.cdnmodule.models.ServiceEngine import ServiceEngine
+from modules.cdnmodule.models.RequestRouter import RequestRouter
+from modules.cdnmodule.models.TCPSession import TCPSesssion
+from modules.cdnmodule.models.HandoverSesssion import HandoverSession
+
 from modules.cdnmodule.cdnEvents import EventCDNPipeline
 
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathRequest, EventShortestPathReply
@@ -274,7 +280,6 @@ class CDNModule(app_manager.RyuApp):
             self.logger.error('Failed to retrieve path from Client to SE')
 
 
-
     def get_closest_se_to_ip(self, ip):
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
@@ -306,7 +311,8 @@ class CDNModule(app_manager.RyuApp):
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
     def _host_in_event(self, ev):
         """
-        This function if responsible for installing matching rules sending to controller if a SE or an RR joins the network
+        This function if responsible for installing matching rules sending to controller if a SE or an RR joins the
+        network
         List of RRs and SEs are defined in the database.json file
         :param ev:
         :type ev: TopologyEvent.EventHostAdd
@@ -347,9 +353,20 @@ class CDNModule(app_manager.RyuApp):
         ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
 
         if(ptcp.has_flags(tcp.TCP_SYN)):
-            self.logger.info('Removing TCP Options')
-            new_ip = ipv4.ipv4(version=ip.version, header_length=5, tos=ip.tos, total_length=0, identification=ip.identification, flags=ip.flags, offset=ip.offset, ttl=ip.ttl, proto=ip.proto, csum=0, src=ip.src, dst=ip.dst, option=ip.option)
-            new_ptcp = tcp.tcp(src_port=ptcp.src_port, dst_port=ptcp.dst_port, seq=ptcp.seq, ack=ptcp.ack, offset=0, bits=ptcp.bits, window_size=ptcp.window_size, csum=0, urgent=ptcp.urgent, option=None)
+            new_ip = ipv4.ipv4(version=ip.version, header_length=5, tos=ip.tos, total_length=0,
+                               identification=ip.identification, flags=ip.flags, offset=ip.offset,
+                               ttl=ip.ttl, proto=ip.proto, csum=0, src=ip.src, dst=ip.dst, option=ip.option)
+
+            # Remove TCP Timestamp and SACK permitted Option as it prevents the handover from working
+            new_options = []
+            for option in ptcp.option:  # type: tcp.TCPOption
+                if not option.kind in [tcp.TCP_OPTION_KIND_TIMESTAMPS, tcp.TCP_OPTION_KIND_SACK_PERMITTED]:
+                    new_options.append(option)
+
+            new_ptcp = tcp.tcp(src_port=ptcp.src_port, dst_port=ptcp.dst_port, seq=ptcp.seq, ack=ptcp.ack,
+                               offset=0, bits=ptcp.bits, window_size=ptcp.window_size, csum=0, urgent=ptcp.urgent,
+                               option=new_options)
+
             new_pkt = packet.Packet()
             new_pkt.add_protocol(eth)
             new_pkt.add_protocol(new_ip)
@@ -381,8 +398,6 @@ class CDNModule(app_manager.RyuApp):
         eth = pkt.get_protocols(ethernet.ethernet)[0]  # type: ethernet.ethernet
         ip = pkt.get_protocols(ipv4.ipv4)[0]  # type: ipv4.ipv4
         ptcp = pkt.get_protocols(tcp.tcp)[0]  # type: tcp.tcp
-
-        self.logger.info(pkt)
 
         node = self._get_node_from_packet(ip, ptcp)  # type: Node
 

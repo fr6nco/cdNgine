@@ -1,0 +1,94 @@
+from modules.cdnmodule.models.node import Node
+from modules.cdnmodule.models.TCPSession import TCPSesssion
+from modules.cdnmodule.models.HandoverSesssion import HandoverSession
+
+from ryu.lib import hub
+from ryu.lib.packet import packet, tcp, ethernet, ipv4
+
+class RequestRouter(Node):
+    def __init__(self, **kwargs):
+        self.handoverSessions = []
+        self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
+        super(RequestRouter, self).__init__(**kwargs)
+        self.type = 'rr'
+        self.getSe = None
+
+    def __str__(self):
+        return 'Request Router node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
+            '. Attached to Access Switch {} port id {:d}'.format(self.datapath_id, self.port_id) if self.datapath_id else ''
+
+    def __eq__(self, other):
+        return isinstance(other, RequestRouter) and \
+               self.name == other.name and \
+               self.ip == other.ip and \
+               self.port == other.port
+
+    def _garbageCollector(self):
+        for sess in self.handoverSessions:  # type: HandoverSession
+            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET]:
+                self.logger.info('Removing finished session ' + str(sess))
+                self.handoverSessions.remove(sess)
+
+        self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
+
+    def _performHandover(self, sess):
+        """
+
+        :param sess:
+        :type sess: HandoverSession
+        :return:
+        """
+        if not sess.serviceEngine:
+            se = self.getSe(sess.ip.src)
+            if se:
+                sess.serviceEngine = se
+                self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
+                self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
+                self.logger.info('Mitigating all corresponding communication from client to Request routed and vice versa')
+
+                sess.event.set()
+            else:
+                self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+
+    def setHandoverCallback(self, fn):
+        self.getSe = fn
+
+    def handlePacket(self, pkt, eth, ip, ptcp):
+        """
+        Handles packet and returns the packet. Packet might change
+
+        :param pkt:
+        :param eth:
+        :type eth: ethernet.ethernet
+        :param ip:
+        :type ip: ipv4.ipv4
+        :param ptcp:
+        :type ptcp: tcp.tcp
+        :return:
+        """
+
+        for sess in self.handoverSessions: #type: HandoverSession
+            if sess.ip.src == ip.src and \
+                    sess.ip.dst == ip.dst and \
+                    sess.ptcp.src_port == ptcp.src_port and \
+                    sess.ptcp.dst_port == ptcp.dst_port:
+                pkt = sess.handlePacket(pkt, eth, ip, ptcp)
+
+                if sess.handoverReady:
+                    self.logger.info('Preparing suitable SE for ' + str(sess))
+                    self._performHandover(sess)
+                return pkt
+            if sess.ip.dst == ip.src and \
+                    sess.ip.src == ip.dst and \
+                    sess.ptcp.src_port == ptcp.dst_port and \
+                    sess.ptcp.dst_port == ptcp.src_port:
+                pkt = sess.handlePacket(pkt, eth, ip, ptcp)
+                return pkt
+
+        # Create a new TCP session if the existin session is not found
+        if ptcp.bits & tcp.TCP_SYN:
+            sess = HandoverSession(pkt, eth, ip, ptcp, self)
+            self.handoverSessions.append(sess)
+        else:
+            self.logger.error('Unexpected non SYN packet arrived to processing')
+        return pkt
