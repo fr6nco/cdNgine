@@ -43,11 +43,23 @@ class Node(object):
         }
 
     def setHandoverCallback(self, fn):
+        """
+        Calls back to the cdnModule
+        :param fn:
+        :return:
+        """
         return
 
     def setMitigateCallback(self, fn):
+        """
+        Calls back to the cdnModule
+        :param fn:
+        :return:
+        """
         self.mitigate = fn
 
-    def setPortInformation(self, datapath_id, port_id):
+    def setPortInformation(self, datapath_id, datapath, port_id, port):
         self.datapath_id = datapath_id
+        self.datapath_obj = datapath
         self.port_id = port_id
+        self.port_obj = port

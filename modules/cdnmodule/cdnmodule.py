@@ -159,6 +159,51 @@ class CDNModule(app_manager.RyuApp):
 
         self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table)
 
+    def _generate_rsts(self, hsess):
+        """
+
+        :param hsess:
+        :type hsess: HandoverSession
+        :return:
+        """
+        hsess_eth = hsess.eth
+        hsess_ip = ipv4.ipv4(version=hsess.ip.version, header_length=5, tos=hsess.ip.tos, total_length=0,
+                           identification=hsess.ip.identification, flags=hsess.ip.flags, offset=hsess.ip.offset,
+                           ttl=hsess.ip.ttl, proto=hsess.ip.proto, csum=0, src=hsess.ip.src, dst=hsess.ip.dst, option=hsess.ip.option)
+ 
+        hsess_ptcp = tcp.tcp(src_port=hsess.ptcp.src_port, dst_port=hsess.ptcp.dst_port,
+                             seq=hsess.src_seq + hsess.request_size + 1, ack=hsess.dst_seq + 1,
+                             offset=0, bits=(tcp.TCP_ACK | tcp.TCP_RST), window_size=hsess.ptcp.window_size, csum=0,
+                             urgent=hsess.ptcp.urgent,
+                             option=None)
+
+        hsess_rst = packet.Packet()
+        hsess_rst.add_protocol(hsess_eth)
+        hsess_rst.add_protocol(hsess_ip)
+        hsess_rst.add_protocol(hsess_ptcp)
+        hsess_rst.serialize()
+        
+        sess = hsess.handoverPair
+        sess_eth = ethernet.ethernet(dst=sess.eth.src, src=sess.eth.dst, ethertype=sess.eth.ethertype)
+
+        sess_ip = ipv4.ipv4(version=sess.ip.version, header_length=5, tos=sess.ip.tos, total_length=0,
+                           identification=sess.ip.identification, flags=sess.ip.flags, offset=sess.ip.offset,
+                           ttl=sess.ip.ttl, proto=sess.ip.proto, csum=0, src=sess.ip.dst, dst=sess.ip.src, option=sess.ip.option)
+
+        sess_ptcp = tcp.tcp(src_port=sess.ptcp.dst_port, dst_port=sess.ptcp.src_port,
+                             seq=sess.dst_seq + 1, ack=sess.src_seq + sess.request_size + 1,
+                             offset=0, bits=(tcp.TCP_ACK | tcp.TCP_RST), window_size=sess.ptcp.window_size, csum=0,
+                             urgent=sess.ptcp.urgent,
+                             option=None)
+
+        sess_rst = packet.Packet()
+        sess_rst.add_protocol(sess_eth)
+        sess_rst.add_protocol(sess_ip)
+        sess_rst.add_protocol(sess_ptcp)
+        sess_rst.serialize()
+
+        return hsess_rst, sess_rst
+
 
     def _update_nodes(self):
         self.nodes = self.db.getData().getNodes()
@@ -227,6 +272,7 @@ class CDNModule(app_manager.RyuApp):
             for p in pathres.path.bw:
                 self.logger.info(p)
 
+
             # Rewrite DST IP and PORT from Client to RR -> SE on ACC switch in FW direction
             p = pathres.path.fw[1]  # 2nd entry on forwardp path
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
@@ -268,12 +314,15 @@ class CDNModule(app_manager.RyuApp):
                 if id == p['src']:
                     self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, hsess.eth.src, p['port'])
 
-            rr = hsess.parentNode  # type: RequestRouter
-            for id, dp in self.switches.dps.iteritems():
-                if id == rr.datapath_id:
-                    self._mitigate_tcp_session(dp, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
-                    self._mitigate_tcp_session(dp, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
-                    self.logger.info('Mitigating communication from RR towards network')
+            # Mitigate all corresponding communication from to request router
+            self._mitigate_tcp_session(hsess.parentNode.datapath_obj, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
+            self._mitigate_tcp_session(hsess.parentNode.datapath_obj, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
+            self.logger.info('Mitigating communication from RR towards network')
+
+            # Send Reset packets towards request router
+            hsess_rst, sess_rst = self._generate_rsts(hsess)
+            self.ofHelper.do_packet_out(hsess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
+            self.ofHelper.do_packet_out(sess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
 
             self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
         else:
@@ -326,7 +375,7 @@ class CDNModule(app_manager.RyuApp):
         for node in self.nodes:
             if node.ip in ev.host.ipv4:
                 datapath = self.dpset.get(ev.host.port.dpid)
-                node.setPortInformation(ev.host.port.dpid, ev.host.port.port_no)
+                node.setPortInformation(ev.host.port.dpid, datapath, ev.host.port.port_no, ev.host.port)
                 self._install_cdnengine_matching_flow(datapath, node.ip, node.port)
                 self.logger.info('New Node connected the network. Matching rules were installed ' + node.__str__())
 
