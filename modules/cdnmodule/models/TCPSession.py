@@ -17,6 +17,8 @@ class TCPSesssion(object):
     STATE_CLOSED_RESET = "reset"
     STATE_CLOSED = "closed"
 
+    STATE_HANDOVERED = "handovered"
+
     # SUBStates for endpoints
     CLIENT_STATE_SYN_SENT = "c_syn_sent"
     SERVER_STATE_SYN_RCVD = "s_syn_rcvd"

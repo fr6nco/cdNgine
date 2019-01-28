@@ -52,6 +52,11 @@ class WsCDNEndpoint(ControllerBase):
         else:
             return {'code': 404, 'res': 'Failed to Retrieve Destination Session'}
 
+    @rpc_public
+    def getallsessions(self):
+        self.logger.info('Requesting all available sessions')
+        return {'code': 200, 'res': self.db.getData().getAllSessions()}
+
     @websocket('wscdn', url)
     def _websocket_handler(self, ws):
         rpc_server = WebSocketRPCServer(ws, self)

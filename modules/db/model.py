@@ -41,6 +41,36 @@ class DatabaseModel(object):
                         return sess
         return None
 
+    def getAllSessions(self):
+        sessions = []
+        for rr in self.getNodesByType('rr'):  # type: RequestRouter
+            for hsess in rr.handoverSessions:  # type: HandoverSession
+                session = {
+                    'type': 'rr',
+                    'src_ip': hsess.ip.src,
+                    'dst_ip': hsess.ip.dst,
+                    'src_port': hsess.ptcp.src_port,
+                    'dst_port': hsess.ptcp.dst_port,
+                    'state': hsess.state,
+                    'handovered': True if hsess.handovered else False,
+                    'handover_ready': True if hsess.handoverReady else False
+                }
+                sessions.append(session)
+        for se in self.getNodesByType('se'):  # type: ServiceEngine
+            for sess in se.sessions:  # type: TCPSesssion
+                session = {
+                    'type': 'se',
+                    'src_ip': sess.ip.src,
+                    'dst_ip': sess.ip.dst,
+                    'src_port': sess.ptcp.src_port,
+                    'dst_port': sess.ptcp.dst_port,
+                    'state': sess.state,
+                    'handovered': True if sess.handovered else False,
+                    'handover_ready': True if sess.handoverReady else False
+                }
+                sessions.append(session)
+        return sessions
+
     def __str__(self):
         return "Current database model:\n" \
                "############\n" \

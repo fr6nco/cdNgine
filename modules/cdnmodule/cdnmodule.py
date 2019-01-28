@@ -103,7 +103,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionSetField(tcp_dst=port_dst_new),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
 
     def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, new_src_mac, out_port):
         ofproto = datapath.ofproto
@@ -117,7 +117,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionSetField(tcp_src=port_src_new),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
 
     def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, new_dst_mac, out_port):
         ofproto = datapath.ofproto
@@ -133,7 +133,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionIncAck(inc_ack),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
 
     def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, new_src_mac, out_port):
         ofproto = datapath.ofproto
@@ -149,7 +149,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionIncAck(inc_ack),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
 
     def _mitigate_tcp_session(self, datapath, src_ip, dst_ip, src_port, dst_port):
         ofproto = datapath.ofproto
@@ -157,7 +157,7 @@ class CDNModule(app_manager.RyuApp):
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=src_ip, tcp_src=src_port, ipv4_dst=dst_ip, tcp_dst=dst_port)
 
-        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table)
+        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table, 10, 30)
 
     def _generate_rsts(self, hsess):
         """
@@ -323,6 +323,9 @@ class CDNModule(app_manager.RyuApp):
             hsess_rst, sess_rst = self._generate_rsts(hsess)
             self.ofHelper.do_packet_out(hsess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
             self.ofHelper.do_packet_out(sess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
+
+            hsess.state = HandoverSession.STATE_HANDOVERED
+            sess.state = TCPSesssion.STATE_HANDOVERED
 
             self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
         else:

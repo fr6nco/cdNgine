@@ -30,7 +30,7 @@ class ofProtoHelperGeneric():
                                 table_id=from_table)
         datapath.send_msg(mod)
 
-    def add_flow(self, datapath, priority, match, actions, table_id, cookie=0, buffer_id=None):
+    def add_flow(self, datapath, priority, match, actions, table_id, cookie=0, buffer_id=None, idle_timeout=0, hard_timeout=0):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
@@ -40,21 +40,22 @@ class ofProtoHelperGeneric():
         if buffer_id:
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id, cookie=cookie,
                                     priority=priority, match=match, table_id=table_id,
-                                    instructions=inst)
+                                    instructions=inst, idle_timeout=idle_timeout, hard_timeout=hard_timeout)
         else:
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority, table_id=table_id,
                                     cookie=cookie,
-                                    match=match, instructions=inst)
+                                    match=match, instructions=inst, idle_timeout=idle_timeout, hard_timeout=hard_timeout)
 
         datapath.send_msg(mod)
 
-    def add_drop_flow(self, datapath, priority, match, table_id):
+    def add_drop_flow(self, datapath, priority, match, table_id, idle_timeout=0, hard_timeout=0):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_CLEAR_ACTIONS, [])]
 
-        msg = parser.OFPFlowMod(datapath=datapath, table_id=table_id, priority=priority, match=match, instructions=inst)
+        msg = parser.OFPFlowMod(datapath=datapath, table_id=table_id, priority=priority, match=match, instructions=inst,
+                                idle_timeout=idle_timeout, hard_timeout=hard_timeout)
 
         datapath.send_msg(msg)
 
