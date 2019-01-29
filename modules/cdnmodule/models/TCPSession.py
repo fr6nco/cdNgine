@@ -69,14 +69,14 @@ class TCPSesssion(object):
         self.upstream_payload = ""
 
         self.logger = logging.getLogger('TCPSession')
-        self.logger.info('New Session ' + str(self))
+        self.logger.debug('New Session ' + str(self))
 
     def __str__(self):
         return "Session from " + self.ip.src + ':' + str(self.ptcp.src_port) + \
                ' to ' + self.ip.dst + ':' + str(self.ptcp.dst_port) + ' in state ' + self.state
 
     def _handleQuietTimerTimeout(self):
-        self.logger.info('Quiet timer occured for ' + str(self))
+        self.logger.debug('Quiet timer occured for ' + str(self))
         if self.state == self.STATE_TIME_WAIT:
             self.state = self.STATE_CLOSED
         elif self.state == self.STATE_TIMEOUT_TIME_WAIT:
@@ -86,7 +86,7 @@ class TCPSesssion(object):
         self.quietTimer = None
 
     def _handleTimeout(self):
-        self.logger.info('Timeout occured for ' + str(self))
+        self.logger.debug('Timeout occured for ' + str(self))
         self.state = self.STATE_TIMEOUT_TIME_WAIT
         if self.quietTimer:
             self.quietTimer.cancel()
@@ -133,14 +133,14 @@ class TCPSesssion(object):
 
     def _processPayload(self):
         if self.upstream_payload.strip() == "":
-            self.logger.info('Payload is empty line, not parsing')
+            self.logger.debug('Payload is empty line, not parsing')
         else:
             self.httpRequest = HttpRequest(self.upstream_payload)
             if self.httpRequest.error_code:
                 self.logger.error('failed to parse HTTP request')
             else:
-                self.logger.info('payload parsed')
-                self.logger.info(self.httpRequest.raw_requestline)
+                self.logger.debug('payload parsed')
+                self.logger.debug(self.httpRequest.raw_requestline)
                 self.request_size = len(self.upstream_payload)
                 self.handoverReady = True
         self.upstream_payload = ""
@@ -174,21 +174,21 @@ class TCPSesssion(object):
                     elif ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                     elif ptcp.bits & tcp.TCP_ACK:
-                        self.logger.info('Transitioning to established state ' + str(self))
                         self.client_state = self.STATE_ESTABLISHED
                         self.server_state = self.STATE_ESTABLISHED
                         self.state = self.STATE_ESTABLISHED
                         self.timeoutTimer.cancel()
                         self.timeoutTimer = None
+                        self.logger.debug('Transitioning to established state ' + str(self))
             else:
                 if self.client_state == self.CLIENT_STATE_SYN_SENT:
                     if ptcp.bits & tcp.TCP_RST:
                         self._handleReset()
                     elif ptcp.bits & (tcp.TCP_SYN | tcp.TCP_ACK) == (tcp.TCP_SYN | tcp.TCP_ACK):
                         if self.server_state is None:
-                            self.logger.debug('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                             self.server_state = self.SERVER_STATE_SYN_RCVD
                             self.dst_seq = ptcp.seq
+                            self.logger.debug('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                         else:
                             self.logger.debug('Retransmission from server occurred on SYN_ACK' + str(self))
 

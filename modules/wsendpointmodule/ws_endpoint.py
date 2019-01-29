@@ -24,7 +24,7 @@ class WsCDNEndpoint(ControllerBase):
         super(WsCDNEndpoint, self).__init__(req, link, data, **config)
 
     def tracer(self, dir, context, msg):
-        self.logger.info("{}: {}".format(dir, msg))
+        self.logger.debug("{}: {}".format(dir, msg))
 
     @rpc_public
     def hello(self, ip, port):

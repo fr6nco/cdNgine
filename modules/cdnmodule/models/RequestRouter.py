@@ -24,7 +24,7 @@ class RequestRouter(Node):
                self.port == other.port
 
     def _garbageCollector(self):
-        for sess in self.handoverSessions:  # type: HandoverSession
+        for sess in self.handoverSessions[:]:  # type: HandoverSession
             if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET, TCPSesssion.STATE_HANDOVERED]:
                 self.logger.info('Removing finished session ' + str(sess))
                 self.handoverSessions.remove(sess)
@@ -44,7 +44,7 @@ class RequestRouter(Node):
                 sess.serviceEngine = se
                 self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
                 self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
-                self.logger.info('Mitigating all corresponding communication from client to Request routed and vice versa')
+                self.logger.debug('Mitigating all corresponding communication from client to Request routed and vice versa')
 
                 sess.event.set()
             else:
@@ -75,15 +75,15 @@ class RequestRouter(Node):
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
 
                 if sess.handoverReady:
-                    self.logger.info('Preparing suitable SE for ' + str(sess))
+                    self.logger.debug('Preparing suitable SE for ' + str(sess))
                     self._performHandover(sess)
-                return pkt
+                return pkt, None
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                return pkt
+                return pkt, None
 
         # Create a new TCP session if the existin session is not found
         if ptcp.bits & tcp.TCP_SYN:
@@ -91,4 +91,4 @@ class RequestRouter(Node):
             self.handoverSessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
-        return pkt
+        return pkt, None

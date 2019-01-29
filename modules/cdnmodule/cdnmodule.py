@@ -66,6 +66,8 @@ class CDNModule(app_manager.RyuApp):
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.nodes = []
 
+        self.shortestPathtoSefromIPCache = []
+
     def _install_cdnengine_matching_flow(self, datapath, ip, port):
         """
         Installs flow to match based on IP, port to datapath to send to controller
@@ -103,7 +105,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionSetField(tcp_dst=port_dst_new),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 3, 0)
 
     def _install_rewrite_src_action_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, new_src_mac, out_port):
         ofproto = datapath.ofproto
@@ -117,7 +119,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionSetField(tcp_src=port_src_new),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 3, 0)
 
     def _install_rewrite_dst_action_with_tcp_sa_out(self, datapath, ip_src, port_src, ip_dst_old, port_dst_old, ip_dst_new, port_dst_new, inc_seq, inc_ack, new_dst_mac, out_port):
         ofproto = datapath.ofproto
@@ -133,7 +135,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionIncAck(inc_ack),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 3, 0)
 
     def _install_rewrite_src_action_with_tcp_sa_out(self, datapath, ip_src_old, port_src_old, ip_src_new, port_src_new, ip_dst, port_dst, inc_seq, inc_ack, new_src_mac, out_port):
         ofproto = datapath.ofproto
@@ -149,7 +151,7 @@ class CDNModule(app_manager.RyuApp):
             parser.OFPActionIncAck(inc_ack),
             parser.OFPActionOutput(out_port)
         ]
-        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 10, 0)
+        self.ofHelper.add_flow(datapath, CONF.cdn.handover_priority, match, actions, CONF.cdn.table, 0, None, 3, 0)
 
     def _mitigate_tcp_session(self, datapath, src_ip, dst_ip, src_port, dst_port):
         ofproto = datapath.ofproto
@@ -157,7 +159,7 @@ class CDNModule(app_manager.RyuApp):
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=src_ip, tcp_src=src_port, ipv4_dst=dst_ip, tcp_dst=dst_port)
 
-        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table, 10, 30)
+        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table, 5, 10)
 
     def _generate_rsts(self, hsess):
         """
@@ -213,12 +215,22 @@ class CDNModule(app_manager.RyuApp):
                 node.setHandoverCallback(self.get_closest_se_to_ip)
             if node.type == 'se':
                 node.setHandoverCallback(self.perform_handover)
+                node.setRSTCallback(self.rsttcpSessioncb)
             node.setMitigateCallback(self.mitigatecb)
 
     def mitigatecb(self, datapath_id, src_ip, dst_ip, src_port, dst_port):
         for id, dp in self.switches.dps.iteritems():  # type: Datapath
             if id == datapath_id:
                 self._mitigate_tcp_session(dp, src_ip, dst_ip, src_port, dst_port)
+
+    def rsttcpSessioncb(self, sess):
+        hsess = sess.handoverPair
+        #
+        # Send Reset packets towards request router
+        hsess_rst, sess_rst = self._generate_rsts(hsess)
+        self.ofHelper.do_packet_out(hsess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
+        self.ofHelper.do_packet_out(sess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
+
 
     def perform_handover(self, sess):
         """
@@ -253,10 +265,6 @@ class CDNModule(app_manager.RyuApp):
 
         self.logger.info('Now do the maths and handover those')
 
-        ## Handover procedure
-        ## Request FW to isntall path from CL to SE <->
-        ## UPDATE Flow mod on FW-acc switch
-        ## Update Flow mod on SE-core switch
 
         spev = EventShortestPathRequest(hsess.ip.src, hsess.serviceEngine.ip)
         spev.dst = 'ForwardingModule'
@@ -264,15 +272,6 @@ class CDNModule(app_manager.RyuApp):
 
         pathres = self.send_request(spev)  # type: EventShortestPathReply
         if pathres.path:
-            self.logger.info('FORWARD path')
-            for p in pathres.path.fw:
-                self.logger.info(p)
-
-            self.logger.info('BACKWARD path')
-            for p in pathres.path.bw:
-                self.logger.info(p)
-
-
             # Rewrite DST IP and PORT from Client to RR -> SE on ACC switch in FW direction
             p = pathres.path.fw[1]  # 2nd entry on forwardp path
             for id, dp in self.switches.dps.iteritems():  # type: Datapath
@@ -286,21 +285,21 @@ class CDNModule(app_manager.RyuApp):
 
             ## Calculate seq ack diffs
             # Sinc_cs = ((2^32) + (Srs - Scr) + (Rrs - Rcr)) %% (2^32)
-            self.logger.info('REQUEST SIZE RS %d CR %d', sess.request_size, hsess.request_size)
+            self.logger.debug('REQUEST SIZE RS %d CR %d', sess.request_size, hsess.request_size)
             seq_cs = ((2 ** 32) + (sess.src_seq - hsess.src_seq) + (sess.request_size - hsess.request_size)) % (2 ** 32)
-            self.logger.info('SEQ CS %d', seq_cs)
+            self.logger.debug('SEQ CS %d', seq_cs)
 
             # Ainc_sc = ((2 ^ 32) - Sinc_cs) % % (2 ^ 32)
             ack_sc = ((2 ** 32) - seq_cs) % (2**32)
-            self.logger.info('ACK SC %d', ack_sc)
+            self.logger.debug('ACK SC %d', ack_sc)
 
             # Sinc_sc = ((2 ^ 32) + (Src - Ssr)) % % (2 ^ 32)
             seq_sc = ((2 ** 32) + (hsess.dst_seq - sess.dst_seq)) % (2 ** 32)
-            self.logger.info('SEQ SC %d', seq_sc)
+            self.logger.debug('SEQ SC %d', seq_sc)
 
             # Ainc_cs = ((2 ^ 32) - Sinc_sc) % % (2 ^ 32)
             ack_cs = ((2 ** 32) - seq_sc) % (2 ** 32)
-            self.logger.info('ACK CS %d', ack_cs)
+            self.logger.debug('ACK CS %d', ack_cs)
 
             # Rewrite SRC IP and PORT from Client -> RR to SE and modify SEQ ACK on CR sw in FW direction
             p = pathres.path.fw[-1]
@@ -319,20 +318,19 @@ class CDNModule(app_manager.RyuApp):
             self._mitigate_tcp_session(hsess.parentNode.datapath_obj, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
             self.logger.info('Mitigating communication from RR towards network')
 
-            # Send Reset packets towards request router
-            hsess_rst, sess_rst = self._generate_rsts(hsess)
-            self.ofHelper.do_packet_out(hsess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
-            self.ofHelper.do_packet_out(sess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
-
             hsess.state = HandoverSession.STATE_HANDOVERED
             sess.state = TCPSesssion.STATE_HANDOVERED
 
-            self.logger.info('Path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
+            self.logger.info('Handovered and path Installed from Client %s to Service Engine %s', hsess.ip.src, hsess.serviceEngine.ip)
         else:
             self.logger.error('Failed to retrieve path from Client to SE')
 
 
     def get_closest_se_to_ip(self, ip):
+        cache = dict(self.shortestPathtoSefromIPCache)
+        if ip in cache:
+            return cache[ip]
+
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
 
@@ -357,6 +355,7 @@ class CDNModule(app_manager.RyuApp):
         for distance in lensrted:
             for node in self.nodes:
                 if node.type == 'se' and node.ip == distance[0]:
+                    self.shortestPathtoSefromIPCache.append((ip, node))
                     return node
         return None
 
@@ -454,8 +453,11 @@ class CDNModule(app_manager.RyuApp):
         node = self._get_node_from_packet(ip, ptcp)  # type: Node
 
         if node:
-            pkt = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet
+            pkt, sess = node.handlePacket(pkt, eth, ip, ptcp)  # type: packet.Packet, TCPSesssion
             fwev = EventForwardingPipeline(datapath=datapath, match=ev.match, data=pkt.data, doPktOut=True)
             self.send_event(name='ForwardingModule', ev=fwev)
+            if sess is not None:
+                self.rsttcpSessioncb(sess)
+                self.logger.info('We are sending 2 RSTs to the RR ass sess was returned')
         else:
             self.logger.error('Could not find node dest / source for the incoming packet packet {}'.format(ip))

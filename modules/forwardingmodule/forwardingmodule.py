@@ -57,6 +57,7 @@ class ForwardingModule(app_manager.RyuApp):
         self.dpset = kwargs['dpset']
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.installed_paths = []
+        self.shortestPathCache = []
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -104,6 +105,9 @@ class ForwardingModule(app_manager.RyuApp):
             self.installed_paths.append((path.dst_ip, path.src_ip))
 
     def _get_shortest_path(self, src_ip, dst_ip):
+        pathcache = dict(self.shortestPathCache)
+        if src_ip+'_'+dst_ip in pathcache:
+            return pathcache[src_ip+'_'+dst_ip]
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
 
@@ -141,6 +145,8 @@ class ForwardingModule(app_manager.RyuApp):
                 'dst': nxPath[i],
                 'port': edged['port'] if 'port' in edged else ''
             })
+
+        self.shortestPathCache.append((src_ip+'_'+dst_ip, path))
 
         return path
 

@@ -11,6 +11,7 @@ class ServiceEngine(Node):
         super(ServiceEngine, self).__init__(**kwargs)
         self.type = 'se'
         self.handover = None
+        self.rsttcp = None
 
     def __str__(self):
         return 'Service Engine node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
@@ -25,12 +26,15 @@ class ServiceEngine(Node):
     def setHandoverCallback(self, fn):
         self.handover = fn
 
+    def setRSTCallback(self, fn):
+        self.rsttcp = fn
+
     def _performHandover(self, sess):
         self.handover(sess)
 
     def _garbageCollector(self):
-        for sess in self.sessions:  # type: TCPSesssion
-            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET, TCPSesssion.STATE_HANDOVERED]:
+        for sess in self.sessions[:]:  # type: TCPSesssion
+            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET]:
                 self.logger.info('Removing finished session ' + str(sess))
                 self.sessions.remove(sess)
 
@@ -55,20 +59,19 @@ class ServiceEngine(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.debug(str(sess))
                 if (sess.handoverReady and not sess.handovered):
-                    self.logger.info('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
+                    self.logger.debug('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
                     self._performHandover(sess)
                     sess.handovered = True
+                    return pkt, sess
 
-                return pkt
+                return pkt, None
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                self.logger.info(str(sess))
-                return pkt
+                return pkt, None
 
         # Create a new TCP session if the existin session is not found
         if ptcp.bits & tcp.TCP_SYN:
@@ -76,4 +79,4 @@ class ServiceEngine(Node):
             self.sessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
-        return pkt
+        return pkt, None
