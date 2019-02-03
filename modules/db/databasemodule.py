@@ -1,11 +1,8 @@
 from ryu.base import app_manager
-from ryu.controller.handler import set_ev_cls
-
-from modules.db.databaseEvents import EventDatabaseQuery, EventDatabaseResponse
 from modules.db.model import DatabaseModel
+from modules.forwardingmodule.forwardingEvents import EventTopologyReply, EventTopologyRequest
 
 import json
-
 from ryu import cfg
 CONF = cfg.CONF
 
@@ -42,3 +39,10 @@ class DatabaseModule(app_manager.RyuApp):
 
     def getData(self):
         return self.db
+
+    def getTopology(self):
+        toporeq = EventTopologyRequest()
+        toporeq.dst = 'ForwardingModule'
+        toporeq.sync = True
+        reply = self.send_request(toporeq)  # type: EventTopologyReply
+        return reply.topology

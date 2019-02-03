@@ -34,7 +34,7 @@ class ServiceEngine(Node):
 
     def _garbageCollector(self):
         for sess in self.sessions[:]:  # type: TCPSesssion
-            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET]:
+            if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET, TCPSesssion.STATE_HANDOVERED]:
                 self.logger.info('Removing finished session ' + str(sess))
                 self.sessions.remove(sess)
 

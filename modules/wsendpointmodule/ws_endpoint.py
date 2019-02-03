@@ -8,6 +8,8 @@ from ryu.app.wsgi import (
 from modules.db.databasemodule import DatabaseModule
 from modules.cdnmodule.models import RequestRouter, ServiceEngine
 
+import networkx as nx
+from networkx import json_graph
 import logging
 import json
 
@@ -56,6 +58,12 @@ class WsCDNEndpoint(ControllerBase):
     def getallsessions(self):
         self.logger.info('Requesting all available sessions')
         return {'code': 200, 'res': self.db.getData().getAllSessions()}
+
+    @rpc_public
+    def gettopology(self):
+        self.logger.info('Requesting Topology via WS RPC')
+        topo = self.db.getTopology()  # type: nx.DiGraph
+        return {'code': 200, 'res': json_graph.node_link_data(topo)}
 
     @websocket('wscdn', url)
     def _websocket_handler(self, ws):

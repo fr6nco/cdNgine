@@ -30,3 +30,19 @@ class EventShortestPathReply(event.EventReplyBase):
     def __init__(self, path, dst):
         super(EventShortestPathReply, self).__init__(dst)
         self.path = path
+
+class EventTopologyRequest(event.EventRequestBase):
+    """
+    Use this request if we need to query the topology
+    """
+    def __init__(self):
+        super(EventTopologyRequest, self).__init__()
+
+
+class EventTopologyReply(event.EventReplyBase):
+    """
+    Use this as a reply to EventTopologyRequest event. Returns a networkx topology
+    """
+    def __init__(self, topology, dst):
+        super(EventTopologyReply, self).__init__(dst)
+        self.topology = topology

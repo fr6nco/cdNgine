@@ -11,7 +11,7 @@ from ryu.lib.packet import ether_types, packet, ethernet, arp, ipv4
 
 from shared import ofprotoHelper
 from modules.forwardingmodule.models import Path
-from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathReply, EventShortestPathRequest
+from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathReply, EventShortestPathRequest, EventTopologyRequest, EventTopologyReply
 from modules.db.databasemodule import DatabaseModule
 
 import networkx as nx
@@ -104,10 +104,11 @@ class ForwardingModule(app_manager.RyuApp):
                     self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
             self.installed_paths.append((path.dst_ip, path.src_ip))
 
-    def _get_shortest_path(self, src_ip, dst_ip):
-        pathcache = dict(self.shortestPathCache)
-        if src_ip+'_'+dst_ip in pathcache:
-            return pathcache[src_ip+'_'+dst_ip]
+    def _get_topology(self):
+        """
+        Returns a networkx DiGraph Object
+        :return:
+        """
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
 
@@ -116,14 +117,18 @@ class ForwardingModule(app_manager.RyuApp):
         g.add_edges_from(links)
 
         for mac, host in self.switches.hosts.iteritems():
-            if dst_ip in host.ipv4:
-                g.add_node(dst_ip)
-                g.add_edge(dst_ip, host.port.dpid)
-                g.add_edge(host.port.dpid, dst_ip, port=host.port.port_no)
-            if src_ip in host.ipv4:
-                g.add_node(src_ip)
-                g.add_edge(src_ip, host.port.dpid)
-                g.add_edge(host.port.dpid, src_ip, port=host.port.port_no)
+            g.add_node(host.ipv4[0])
+            g.add_edge(host.ipv4[0], host.port.dpid)
+            g.add_edge(host.port.dpid, host.ipv4[0], port=host.port.port_no)
+
+        return g
+
+    def _get_shortest_path(self, src_ip, dst_ip):
+        pathcache = dict(self.shortestPathCache)
+        if src_ip+'_'+dst_ip in pathcache:
+            return pathcache[src_ip+'_'+dst_ip]
+
+        g = self._get_topology()
 
         try:
             nxPath = nx.shortest_path(g, src_ip, dst_ip)
@@ -175,6 +180,12 @@ class ForwardingModule(app_manager.RyuApp):
                             return port
 
         return None
+
+    @set_ev_cls(EventTopologyRequest, None)
+    def getTopology(self, ev):
+        topology = self._get_topology()
+        reply = EventTopologyReply(topology, ev.src)
+        self.reply_to_request(ev, reply)
 
     @set_ev_cls(EventShortestPathRequest, None)
     def requestShortestPath(self, ev):
