@@ -18,6 +18,15 @@
         "datapath_id": null,
         "port_id": null,
         "domain": "se1.cdn.example.com"
+      },
+      {
+        "name": "se2",
+        "ip": "10.11.0.3",
+        "port": 80,
+        "type": "se",
+        "datapath_id": null,
+        "port_id": null,
+        "domain": "se2.cdn.example.com"
       }
     ]
   }
