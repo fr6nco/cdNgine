@@ -6,3 +6,4 @@
 .tox/
 .coverage
 .idea/*
+config/database.json
