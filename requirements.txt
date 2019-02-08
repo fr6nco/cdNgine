@@ -16,7 +16,6 @@ oslo.config==6.8.0
 oslo.i18n==3.23.0
 ovs==2.10.0
 pbr==5.1.2
-pkg-resources==0.0.0
 pytz==2018.9
 PyYAML==3.13
 repoze.lru==0.7
