@@ -18,6 +18,10 @@ class HandoverSession(TCPSesssion):
                 self.handoverPair = sess
                 sess.handoverPair = self
                 return sess
+        self.logger.error('No suitable session found')
+        self.logger.error('there are sessions available: ')
+        for sess in self.serviceEngine.sessions:
+            self.logger.error(sess)
         return None
 
     def __str__(self):
