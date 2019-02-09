@@ -42,6 +42,8 @@ class DatabaseModel(object):
                         hsess.event.wait(timeout=3)
                         self.logger.info('Event received')
                         sess = hsess.popDestinationSesssion()
+                        self.logger.info('Session is:')
+                        self.logger.info(sess)
                         return sess
         return None
 
