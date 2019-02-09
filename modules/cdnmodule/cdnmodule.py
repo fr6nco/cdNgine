@@ -240,30 +240,30 @@ class CDNModule(app_manager.RyuApp):
         :return:
         """
         hsess = sess.handoverPair  # type: HandoverSession
-        self.logger.info('DOING HANDOVER IN CDN MODULE. DOING MAGIC')
+        self.logger.debug('DOING HANDOVER IN CDN MODULE. DOING MAGIC')
 
-        self.logger.info('Client established connection to RR:')
-        self.logger.info('{}:{} -> {}.{}'.format(hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port))
-        self.logger.info('Client sent HTTP Request')
-        self.logger.info(hsess.httpRequest.raw_requestline)
-        self.logger.info(hsess.httpRequest.headers)
+        self.logger.debug('Client established connection to RR:')
+        self.logger.debug('{}:{} -> {}.{}'.format(hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port))
+        self.logger.debug('Client sent HTTP Request')
+        self.logger.debug(hsess.httpRequest.raw_requestline)
+        self.logger.debug(hsess.httpRequest.headers)
 
-        self.logger.info('CDN Engine decided to handover this session to service engine:')
-        self.logger.info(str(hsess.serviceEngine))
+        self.logger.debug('CDN Engine decided to handover this session to service engine:')
+        self.logger.debug(str(hsess.serviceEngine))
 
-        self.logger.info('RR pre established a Sesssion to the chosen SE:')
-        self.logger.info('{}:{} -> {}.{}'.format(sess.ip.src, sess.ptcp.src_port, sess.ip.dst, sess.ptcp.dst_port))
+        self.logger.debug('RR pre established a Sesssion to the chosen SE:')
+        self.logger.debug('{}:{} -> {}.{}'.format(sess.ip.src, sess.ptcp.src_port, sess.ip.dst, sess.ptcp.dst_port))
 
-        self.logger.info('After processing the Request Router sent a HTTP request to this SE which is')
-        self.logger.info(sess.httpRequest.raw_requestline)
-        self.logger.info(sess.httpRequest.headers)
+        self.logger.debug('After processing the Request Router sent a HTTP request to this SE which is')
+        self.logger.debug(sess.httpRequest.raw_requestline)
+        self.logger.debug(sess.httpRequest.headers)
 
-        self.logger.info('Source SEQ on client-RR leg: %d', hsess.src_seq)
-        self.logger.info('Dest SEQ on client-RR leg: %d', hsess.dst_seq)
-        self.logger.info('Source SEQ on RR-SE leg: %d', sess.src_seq)
-        self.logger.info('Dest SEQ on RR-SE leg: %d', sess.dst_seq)
+        self.logger.debug('Source SEQ on client-RR leg: %d', hsess.src_seq)
+        self.logger.debug('Dest SEQ on client-RR leg: %d', hsess.dst_seq)
+        self.logger.debug('Source SEQ on RR-SE leg: %d', sess.src_seq)
+        self.logger.debug('Dest SEQ on RR-SE leg: %d', sess.dst_seq)
 
-        self.logger.info('Now do the maths and handover those')
+        self.logger.debug('Now do the maths and handover those')
 
 
         spev = EventShortestPathRequest(hsess.ip.src, hsess.serviceEngine.ip)

@@ -47,6 +47,7 @@ class WsCDNEndpoint(ControllerBase):
 
     @rpc_public
     def getmatchingsess(self, src_ip, src_port, dst_ip, dst_port):
+        self.logger.info('Request Router requesting matching session for {}:{}<->{}:{}'.format(src_ip, src_port, dst_ip, dst_port))
         matchingsess = self.db.getData().getMatchingSess(src_ip, src_port, dst_ip, dst_port)
         if matchingsess:
             return {'code': 200, 'res': {'src_ip': matchingsess.ip.src, 'src_port': matchingsess.ptcp.src_port,
