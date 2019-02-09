@@ -22,6 +22,8 @@ class HandoverSession(TCPSesssion):
         self.logger.error('there are sessions available: ')
         for sess in self.serviceEngine.sessions:
             self.logger.error(sess)
+            self.logger.error('requested?')
+            self.logger.error(self.handoverRequested)
         return None
 
     def __str__(self):
