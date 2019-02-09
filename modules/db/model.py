@@ -3,6 +3,7 @@ from modules.cdnmodule.models.ServiceEngine import ServiceEngine
 from modules.cdnmodule.models.RequestRouter import RequestRouter
 from modules.cdnmodule.models.TCPSession import TCPSesssion
 from modules.cdnmodule.models.HandoverSesssion import HandoverSession
+import logging
 
 class DatabaseModel(object):
     """
@@ -11,6 +12,7 @@ class DatabaseModel(object):
     def __init__(self, db):
         self.serialized_db = db
         self.nodes = []
+        self.logger = logging.getLogger('DatabaseModule')
         self._loadData()
 
     def _loadData(self):
@@ -36,7 +38,9 @@ class DatabaseModel(object):
                     if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
                         # This is required, because sometimes the data in threads are not synchronized
                         # and the SE won't be set even though it is set
+                        self.logger.info('Waiting for Event from Thread')
                         hsess.event.wait(timeout=3)
+                        self.logger.info('Event received')
                         sess = hsess.popDestinationSesssion()
                         return sess
         return None
