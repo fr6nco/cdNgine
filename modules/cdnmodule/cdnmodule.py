@@ -159,7 +159,7 @@ class CDNModule(app_manager.RyuApp):
 
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ip_proto=inet.IPPROTO_TCP, ipv4_src=src_ip, tcp_src=src_port, ipv4_dst=dst_ip, tcp_dst=dst_port)
 
-        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table, 2, 0)
+        self.ofHelper.add_drop_flow(datapath, 2, match, CONF.cdn.table, 1, 0)
 
     def _generate_rsts(self, hsess):
         """
