@@ -3,6 +3,7 @@ from modules.cdnmodule.models.TCPSession import TCPSesssion
 
 from ryu.lib import hub
 from ryu.lib.packet import packet, tcp, ethernet, ipv4
+import threading
 
 from eventlet.semaphore import Semaphore
 
@@ -85,7 +86,11 @@ class ServiceEngine(Node):
         if ptcp.bits & tcp.TCP_SYN:
             sess = TCPSesssion(pkt, eth, ip, ptcp, self)
             self.sessions.append(sess)
+            self.lock.release()
+            return pkt, None
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
+
+        self.logger.error("Packet went through pipeline without match")
         self.lock.release()
         return pkt, None

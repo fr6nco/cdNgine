@@ -105,6 +105,8 @@ class RequestRouter(Node):
         if ptcp.bits & tcp.TCP_SYN:
             sess = HandoverSession(pkt, eth, ip, ptcp, self)
             self.handoverSessions.append(sess)
+            self.lock.release()
+            return pkt, None
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
 
