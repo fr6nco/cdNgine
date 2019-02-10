@@ -133,7 +133,7 @@ class TCPSesssion(object):
 
     def _processPayload(self):
         if self.upstream_payload.strip() == "":
-            self.logger.debug('Payload is empty line, not parsing')
+            self.logger.info('Payload is empty line, not parsing')
         else:
             self.httpRequest = HttpRequest(self.upstream_payload)
             if self.httpRequest.error_code:
@@ -143,7 +143,7 @@ class TCPSesssion(object):
                 self.logger.debug(self.httpRequest.raw_requestline)
                 self.request_size = len(self.upstream_payload)
                 self.handoverReady = True
-        self.upstream_payload = ""
+        # self.upstream_payload = ""
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -205,6 +205,8 @@ class TCPSesssion(object):
                         self._processPayload()
                 elif ptcp.bits & tcp.TCP_ACK:
                     if pload is not None:
+                        self.logger.info('we got payload which had no push set')
+                        self.logger.info(pload)
                         self.upstream_payload += pload
             else:
                 if ptcp.bits & tcp.TCP_FIN:

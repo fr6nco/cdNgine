@@ -88,7 +88,7 @@ class RequestRouter(Node):
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
 
                 if sess.handoverReady:
-                    self.logger.debug('Preparing suitable SE for ' + str(sess))
+                    self.logger.info('Preparing suitable SE for ' + str(sess))
                     self._performHandover(sess)
 
                 self.lock.release()
