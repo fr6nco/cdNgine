@@ -90,12 +90,15 @@ class RequestRouter(Node):
                 if sess.handoverReady:
                     self.logger.debug('Preparing suitable SE for ' + str(sess))
                     self._performHandover(sess)
+
+                self.lock.release()
                 return pkt, None
             if sess.ip.dst == ip.src and \
                     sess.ip.src == ip.dst and \
                     sess.ptcp.src_port == ptcp.dst_port and \
                     sess.ptcp.dst_port == ptcp.src_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
+                self.lock.release()
                 return pkt, None
 
         # Create a new TCP session if the existin session is not found
