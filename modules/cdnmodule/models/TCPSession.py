@@ -195,6 +195,10 @@ class TCPSesssion(object):
 
         elif self.state == self.STATE_ESTABLISHED:
             if from_client:
+                self.logger.info('BITS ARE:')
+                self.logger.info(ptcp.bits)
+                self.logger.info('src port is')
+                self.logger.info(ptcp.src_port)
                 if ptcp.bits & tcp.TCP_FIN:
                     self.state = self.STATE_CLOSING
                     self._handleClosing(ptcp.bits, from_client, pload, ptcp.seq, ptcp.ack)
