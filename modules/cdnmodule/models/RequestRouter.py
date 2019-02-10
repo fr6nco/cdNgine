@@ -38,15 +38,19 @@ class RequestRouter(Node):
         :type sess: HandoverSession
         :return:
         """
+        self.logger.info('Performhandover is called from Request Router, we gonna find a service engine')
         if not sess.serviceEngine:
             se = self.getSe(sess.ip.src)
             if se:
+                self.logger.info('we found se')
                 sess.serviceEngine = se
+                sess.event.set()
                 self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
                 self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
                 self.logger.debug('Mitigating all corresponding communication from client to Request routed and vice versa')
 
-                sess.event.set()
+                self.logger.info('Event was set')
+                self.logger.info(se)
             else:
                 self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
 

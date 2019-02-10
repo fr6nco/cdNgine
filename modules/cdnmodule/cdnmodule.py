@@ -325,7 +325,6 @@ class CDNModule(app_manager.RyuApp):
         else:
             self.logger.error('Failed to retrieve path from Client to SE')
 
-
     def get_closest_se_to_ip(self, ip):
         cache = dict(self.shortestPathtoSefromIPCache)
         if ip in cache:

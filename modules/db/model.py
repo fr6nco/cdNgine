@@ -39,7 +39,7 @@ class DatabaseModel(object):
                         # This is required, because sometimes the data in threads are not synchronized
                         # and the SE won't be set even though it is set
                         self.logger.info('Waiting for Event from Thread')
-                        hsess.event.wait(timeout=3)
+                        res = hsess.event.wait()
                         self.logger.info('Event received')
                         sess = hsess.popDestinationSesssion()
                         self.logger.info('Session is:')
