@@ -53,6 +53,9 @@ class RequestRouter(Node):
                 self.logger.info(se)
             else:
                 self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
+        else:
+            self.logger.info('service engine is set for session')
+            self.logger.info(sess.event.is_set())
 
     def setHandoverCallback(self, fn):
         self.getSe = fn
