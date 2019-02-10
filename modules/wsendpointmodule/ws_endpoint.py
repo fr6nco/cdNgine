@@ -56,6 +56,15 @@ class WsCDNEndpoint(ControllerBase):
             return {'code': 404, 'res': 'Failed to Retrieve Destination Session'}
 
     @rpc_public
+    def setrequestsize(self, src_ip, src_port, dst_ip, dst_port, type, requestsize):
+        self.logger.info('Request router sending the size of the raw request for {}:{}<->{}:{}'.format(src_ip, src_port, dst_ip, dst_port))
+        saved = self.db.getData().setRequestSize(src_ip, src_port, dst_ip, dst_port, type, requestsize)
+        if saved:
+            return {'code': 200, 'res': 'Request Size saved'}
+        else:
+            return {'code': 404, 'res': 'Session not found'}
+
+    @rpc_public
     def getallsessions(self):
         self.logger.info('Requesting all available sessions')
         return {'code': 200, 'res': self.db.getData().getAllSessions()}

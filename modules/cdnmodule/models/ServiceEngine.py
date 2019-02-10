@@ -65,7 +65,8 @@ class ServiceEngine(Node):
                     sess.ptcp.src_port == ptcp.src_port and \
                     sess.ptcp.dst_port == ptcp.dst_port:
                 pkt = sess.handlePacket(pkt, eth, ip, ptcp)
-                if (sess.handoverReady and not sess.handovered):
+
+                if sess.handoverReady and not sess.handovered:
                     self.logger.debug('Handover is ready on SE too. Requesting CNT to do the dirty stuff')
                     self._performHandover(sess)
                     sess.handovered = True
@@ -91,6 +92,6 @@ class ServiceEngine(Node):
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
 
-        self.logger.error("Packet went through pipeline without match in SE")
+        self.logger.error("Packet went through pipeline without match in SE {}:{}<->{}:{}".format(ip.src, ptcp.src_port, ip.dst, ptcp.dst_port))
         self.lock.release()
         return pkt, None

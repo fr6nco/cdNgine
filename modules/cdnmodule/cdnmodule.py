@@ -231,7 +231,6 @@ class CDNModule(app_manager.RyuApp):
         self.ofHelper.do_packet_out(hsess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
         self.ofHelper.do_packet_out(sess_rst, hsess.parentNode.datapath_obj, hsess.parentNode.port_obj)
 
-
     def perform_handover(self, sess):
         """
 
@@ -244,9 +243,6 @@ class CDNModule(app_manager.RyuApp):
 
         self.logger.debug('Client established connection to RR:')
         self.logger.debug('{}:{} -> {}.{}'.format(hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port))
-        self.logger.debug('Client sent HTTP Request')
-        self.logger.debug(hsess.httpRequest.raw_requestline)
-        self.logger.debug(hsess.httpRequest.headers)
 
         self.logger.debug('CDN Engine decided to handover this session to service engine:')
         self.logger.debug(str(hsess.serviceEngine))
@@ -254,17 +250,12 @@ class CDNModule(app_manager.RyuApp):
         self.logger.debug('RR pre established a Sesssion to the chosen SE:')
         self.logger.debug('{}:{} -> {}.{}'.format(sess.ip.src, sess.ptcp.src_port, sess.ip.dst, sess.ptcp.dst_port))
 
-        self.logger.debug('After processing the Request Router sent a HTTP request to this SE which is')
-        self.logger.debug(sess.httpRequest.raw_requestline)
-        self.logger.debug(sess.httpRequest.headers)
-
         self.logger.debug('Source SEQ on client-RR leg: %d', hsess.src_seq)
         self.logger.debug('Dest SEQ on client-RR leg: %d', hsess.dst_seq)
         self.logger.debug('Source SEQ on RR-SE leg: %d', sess.src_seq)
         self.logger.debug('Dest SEQ on RR-SE leg: %d', sess.dst_seq)
 
         self.logger.debug('Now do the maths and handover those')
-
 
         spev = EventShortestPathRequest(hsess.ip.src, hsess.serviceEngine.ip)
         spev.dst = 'ForwardingModule'
@@ -326,9 +317,9 @@ class CDNModule(app_manager.RyuApp):
             self.logger.error('Failed to retrieve path from Client to SE')
 
     def get_closest_se_to_ip(self, ip):
-        # cache = dict(self.shortestPathtoSefromIPCache)
-        # if ip in cache:
-        #     return cache[ip]
+        cache = dict(self.shortestPathtoSefromIPCache)
+        if ip in cache:
+            return cache[ip]
 
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
@@ -354,7 +345,7 @@ class CDNModule(app_manager.RyuApp):
         for distance in lensrted:
             for node in self.nodes:
                 if node.type == 'se' and node.ip == distance[0]:
-                    # self.shortestPathtoSefromIPCache.append((ip, node))
+                    self.shortestPathtoSefromIPCache.append((ip, node))
                     return node
         return None
 

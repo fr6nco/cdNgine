@@ -44,24 +44,21 @@ class RequestRouter(Node):
         :type sess: HandoverSession
         :return:
         """
-        self.logger.info('Performhandover is called from Request Router, we gonna find a service engine')
         if not sess.serviceEngine:
             se = self.getSe(sess.ip.src)
             if se:
-                self.logger.info('we found se')
+                self.logger.info('We found a suitable SE to handover the session to')
                 sess.serviceEngine = se
                 sess.event.set()
-                self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
-                self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
-                self.logger.debug('Mitigating all corresponding communication from client to Request routed and vice versa')
-
-                self.logger.info('Event was set')
                 self.logger.info(se)
+
+                self.logger.info('Mitigating all corresponding communication from Request router to Client')
+                # self.mitigate(self.datapath_id, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
+                self.mitigate(self.datapath_id, sess.ip.dst, sess.ip.src, sess.ptcp.dst_port, sess.ptcp.src_port)
+
+                self.logger.info('Event was set to be Thread Safe')
             else:
                 self.logger.error('Failed to find suitable Service engine for session ' + str(sess))
-        else:
-            self.logger.info('service engine is set for session')
-            self.logger.info(sess.event.is_set())
 
     def setHandoverCallback(self, fn):
         self.getSe = fn
@@ -80,9 +77,7 @@ class RequestRouter(Node):
         :return:
         """
         self.lock.acquire()
-        self.logger.info('currently available sessions:')
         for sess in self.handoverSessions: #type: HandoverSession
-            self.logger.info(sess)
             if sess.ip.src == ip.src and \
                     sess.ip.dst == ip.dst and \
                     sess.ptcp.src_port == ptcp.src_port and \
@@ -112,6 +107,6 @@ class RequestRouter(Node):
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
 
-        self.logger.error("Packet went through pipeline without match in RR")
+        self.logger.error("Packet went through pipeline without match in RR {}:{}<->{}:{}".format(ip.src, ptcp.src_port, ip.dst, ptcp.dst_port))
         self.lock.release()
         return pkt, None

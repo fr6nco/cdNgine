@@ -44,7 +44,6 @@ class TCPSesssion(object):
         """
         # MAIN STATES
 
-
         self.pkt_syn = pkt
         self.eth = eth
         self.ip = ip
@@ -66,14 +65,15 @@ class TCPSesssion(object):
         self.handoverPair = None
         self.parentNode = parentNode
 
-        self.upstream_payload = ""
-
         self.logger = logging.getLogger('TCPSession')
-        self.logger.debug('New Session ' + str(self))
+        self.logger.info('New SYN packet arrived ' + str(self))
 
     def __str__(self):
         return "Session from " + self.ip.src + ':' + str(self.ptcp.src_port) + \
                ' to ' + self.ip.dst + ':' + str(self.ptcp.dst_port) + ' in state ' + self.state
+
+    def setRequestSize(self, size):
+        self.request_size = size
 
     def _handleQuietTimerTimeout(self):
         self.logger.debug('Quiet timer occured for ' + str(self))
@@ -131,20 +131,6 @@ class TCPSesssion(object):
                 if self.server_state == self.STATE_CLOSED:
                     self.state = self.STATE_TIME_WAIT
 
-    def _processPayload(self):
-        if self.upstream_payload.strip() == "":
-            self.logger.info('Payload is empty line, not parsing')
-        else:
-            self.httpRequest = HttpRequest(self.upstream_payload)
-            if self.httpRequest.error_code:
-                self.logger.error('failed to parse HTTP request')
-            else:
-                self.logger.info('payload parsed')
-                self.logger.info(self.httpRequest.raw_requestline)
-                self.request_size = len(self.upstream_payload)
-                self.handoverReady = True
-                self.logger.info('is handoverReady')
-        # self.upstream_payload = ""
 
     def handlePacket(self, pkt, eth, ip, ptcp):
         """
@@ -158,7 +144,7 @@ class TCPSesssion(object):
         pload = None
         for protocol in pkt:
             if not hasattr(protocol, 'protocol_name'):
-                pload = protocol # extracting payload
+                pload = protocol  # extracting payload
 
         from_client = True if ip.dst == self.ip.dst else False
 
@@ -189,39 +175,21 @@ class TCPSesssion(object):
                         if self.server_state is None:
                             self.server_state = self.SERVER_STATE_SYN_RCVD
                             self.dst_seq = ptcp.seq
-                            self.logger.debug('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
+                            self.logger.info('Going to state SYN / ACK. Waiting for ACK to establish session ' + str(self))
                         else:
                             self.logger.debug('Retransmission from server occurred on SYN_ACK' + str(self))
 
         elif self.state == self.STATE_ESTABLISHED:
             if from_client:
-                self.logger.info('BITS ARE:')
-                self.logger.info(ptcp.bits)
-                self.logger.info('src port is')
-                self.logger.info(ptcp.src_port)
                 if ptcp.bits & tcp.TCP_FIN:
                     self.state = self.STATE_CLOSING
                     self._handleClosing(ptcp.bits, from_client, pload, ptcp.seq, ptcp.ack)
                 elif ptcp.bits & tcp.TCP_RST:
                     self._handleReset()
-                elif ptcp.bits & tcp.TCP_PSH:
-                    self.logger.info('PUSH is set')
-                    if pload:
-                        self.upstream_payload +=pload
-                        self.logger.info('Pload is')
-                        self.logger.info(pload)
-                        self._processPayload()
-                    else:
-                        self.logger.info('pload is empty, process pload not called')
-                elif ptcp.bits & tcp.TCP_ACK:
-                    if pload is not None:
-                        self.logger.info('we got payload which had no push set')
-                        self.logger.info(pload)
-                        self.upstream_payload += pload
-                    else:
-                        self.logger.info('pload is none and ACK was set')
-                        self.logger.info('curr pload is')
-                        self.logger.info(self.upstream_payload)
+                else:
+                    # At this point the GET went through, we can mitigate responses from RR if RR type
+                    self.handoverReady = True
+
             else:
                 if ptcp.bits & tcp.TCP_FIN:
                     self.state = self.STATE_CLOSING

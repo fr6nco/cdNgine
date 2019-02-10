@@ -40,12 +40,32 @@ class DatabaseModel(object):
                         # and the SE won't be set even though it is set
                         self.logger.info('Waiting for Event from Thread')
                         res = hsess.event.wait()
-                        self.logger.info('Event received')
                         sess = hsess.popDestinationSesssion()
-                        self.logger.info('Session is:')
-                        self.logger.info(sess)
                         return sess
         return None
+
+    def setRequestSize(self, src_ip, src_port, dst_ip, dst_port, type, size):
+        for node in self.getNodesByType(str(type)):
+            if isinstance(node, RequestRouter):
+                # If request router
+                if node.ip == dst_ip and node.port == dst_port:
+                    for hsess in node.handoverSessions:  # type: HandoverSession
+                        if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
+                            hsess.setRequestSize(size)
+                            # We have to call the performhandover stuff, so the SE is set
+                            # this is a redundant call, we just want to make sure se is chosen.
+                            node._performHandover(hsess)
+                            return True
+            else:
+                # If service engine
+                if node.ip == dst_ip and node.port == dst_port:
+                    for sess in node.sessions:  # type: TCPSesssion
+                        if sess.ip.src == src_ip and sess.ptcp.src_port == src_port:
+                            sess.setRequestSize(size)
+                            return True
+
+        self.logger.error('Could not find session to set request size')
+        return False
 
     def getAllSessions(self):
         sessions = []
