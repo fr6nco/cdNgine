@@ -110,5 +110,6 @@ class RequestRouter(Node):
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
 
+        self.logger.error("Packet went through pipeline without match in RR")
         self.lock.release()
         return pkt, None
