@@ -80,7 +80,9 @@ class RequestRouter(Node):
         :return:
         """
         self.lock.acquire()
+        self.logger.info('currently available sessions:')
         for sess in self.handoverSessions: #type: HandoverSession
+            self.logger.info(sess)
             if sess.ip.src == ip.src and \
                     sess.ip.dst == ip.dst and \
                     sess.ptcp.src_port == ptcp.src_port and \

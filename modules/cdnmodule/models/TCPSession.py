@@ -139,10 +139,11 @@ class TCPSesssion(object):
             if self.httpRequest.error_code:
                 self.logger.error('failed to parse HTTP request')
             else:
-                self.logger.debug('payload parsed')
-                self.logger.debug(self.httpRequest.raw_requestline)
+                self.logger.info('payload parsed')
+                self.logger.info(self.httpRequest.raw_requestline)
                 self.request_size = len(self.upstream_payload)
                 self.handoverReady = True
+                self.logger.info('is handoverReady')
         # self.upstream_payload = ""
 
     def handlePacket(self, pkt, eth, ip, ptcp):
@@ -200,14 +201,23 @@ class TCPSesssion(object):
                 elif ptcp.bits & tcp.TCP_RST:
                     self._handleReset()
                 elif ptcp.bits & tcp.TCP_PSH:
+                    self.logger.info('PUSH is set')
                     if pload:
                         self.upstream_payload +=pload
+                        self.logger.info('Pload is')
+                        self.logger.info(pload)
                         self._processPayload()
+                    else:
+                        self.logger.info('pload is empty, process pload not called')
                 elif ptcp.bits & tcp.TCP_ACK:
                     if pload is not None:
                         self.logger.info('we got payload which had no push set')
                         self.logger.info(pload)
                         self.upstream_payload += pload
+                    else:
+                        self.logger.info('pload is none and ACK was set')
+                        self.logger.info('curr pload is')
+                        self.logger.info(self.upstream_payload)
             else:
                 if ptcp.bits & tcp.TCP_FIN:
                     self.state = self.STATE_CLOSING
