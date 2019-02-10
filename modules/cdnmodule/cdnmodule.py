@@ -326,9 +326,9 @@ class CDNModule(app_manager.RyuApp):
             self.logger.error('Failed to retrieve path from Client to SE')
 
     def get_closest_se_to_ip(self, ip):
-        cache = dict(self.shortestPathtoSefromIPCache)
-        if ip in cache:
-            return cache[ip]
+        # cache = dict(self.shortestPathtoSefromIPCache)
+        # if ip in cache:
+        #     return cache[ip]
 
         switches = [dp for dp in self.switches.dps]
         links = [(link.src.dpid, link.dst.dpid, {'port': link.src.port_no}) for link in self.switches.links]
@@ -354,7 +354,7 @@ class CDNModule(app_manager.RyuApp):
         for distance in lensrted:
             for node in self.nodes:
                 if node.type == 'se' and node.ip == distance[0]:
-                    self.shortestPathtoSefromIPCache.append((ip, node))
+                    # self.shortestPathtoSefromIPCache.append((ip, node))
                     return node
         return None
 
