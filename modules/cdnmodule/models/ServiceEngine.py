@@ -4,6 +4,8 @@ from modules.cdnmodule.models.TCPSession import TCPSesssion
 from ryu.lib import hub
 from ryu.lib.packet import packet, tcp, ethernet, ipv4
 
+from eventlet.semaphore import Semaphore
+
 class ServiceEngine(Node):
     def __init__(self, **kwargs):
         self.sessions = []
@@ -12,6 +14,7 @@ class ServiceEngine(Node):
         self.type = 'se'
         self.handover = None
         self.rsttcp = None
+        self.lock = Semaphore()
 
     def __str__(self):
         return 'Service Engine node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
@@ -33,11 +36,12 @@ class ServiceEngine(Node):
         self.handover(sess)
 
     def _garbageCollector(self):
+        self.lock.acquire()
         for sess in self.sessions[:]:  # type: TCPSesssion
             if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET, TCPSesssion.STATE_HANDOVERED]:
                 self.logger.info('Removing finished session ' + str(sess))
                 self.sessions.remove(sess)
-
+        self.lock.release()
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
 
     def handlePacket(self, pkt, eth, ip, ptcp):
@@ -53,6 +57,7 @@ class ServiceEngine(Node):
         :type ptcp: tcp.tcp
         :return:
         """
+        self.lock.acquire()
         for sess in self.sessions: #type: TCPSesssion
             if sess.ip.src == ip.src and \
                     sess.ip.dst == ip.dst and \
@@ -79,4 +84,5 @@ class ServiceEngine(Node):
             self.sessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
+        self.lock.release()
         return pkt, None

@@ -5,6 +5,8 @@ from modules.cdnmodule.models.HandoverSesssion import HandoverSession
 from ryu.lib import hub
 from ryu.lib.packet import packet, tcp, ethernet, ipv4
 
+from eventlet.semaphore import Semaphore
+
 class RequestRouter(Node):
     def __init__(self, **kwargs):
         self.handoverSessions = []
@@ -12,6 +14,7 @@ class RequestRouter(Node):
         super(RequestRouter, self).__init__(**kwargs)
         self.type = 'rr'
         self.getSe = None
+        self.lock = Semaphore()
 
     def __str__(self):
         return 'Request Router node. HTTP engine on {}:{:d}'.format(self.ip, self.port) + \
@@ -24,11 +27,14 @@ class RequestRouter(Node):
                self.port == other.port
 
     def _garbageCollector(self):
+        self.lock.acquire()
+
         for sess in self.handoverSessions[:]:  # type: HandoverSession
             if sess.state in [TCPSesssion.STATE_CLOSED, TCPSesssion.STATE_TIMEOUT, TCPSesssion.STATE_CLOSED_RESET, TCPSesssion.STATE_HANDOVERED]:
                 self.logger.info('Removing finished session ' + str(sess))
                 self.handoverSessions.remove(sess)
 
+        self.lock.release()
         self.garbageLoop = hub.spawn_after(1, self._garbageCollector)
 
     def _performHandover(self, sess):
@@ -73,7 +79,7 @@ class RequestRouter(Node):
         :type ptcp: tcp.tcp
         :return:
         """
-
+        self.lock.acquire()
         for sess in self.handoverSessions: #type: HandoverSession
             if sess.ip.src == ip.src and \
                     sess.ip.dst == ip.dst and \
@@ -98,4 +104,6 @@ class RequestRouter(Node):
             self.handoverSessions.append(sess)
         else:
             self.logger.error('Unexpected non SYN packet arrived to processing')
+
+        self.lock.release()
         return pkt, None
