@@ -351,8 +351,8 @@ class CDNModule(app_manager.RyuApp):
 
     @set_ev_cls(EventClosestSeRequest, None)
     def get_closest_se_to_ip_public(self, ev):
-        ip = self.get_closest_se_to_ip(ev.ip)
-        reply = EventClosestSeReply(ip, ev.src)
+        node = self.get_closest_se_to_ip(ev.ip)  # type: ServiceEngine
+        reply = EventClosestSeReply(node.ip, ev.src)
         self.reply_to_request(ev, reply)
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
