@@ -20,7 +20,7 @@ from modules.cdnmodule.models.RequestRouter import RequestRouter
 from modules.cdnmodule.models.TCPSession import TCPSesssion
 from modules.cdnmodule.models.HandoverSesssion import HandoverSession
 
-from modules.cdnmodule.cdnEvents import EventCDNPipeline
+from modules.cdnmodule.cdnEvents import EventCDNPipeline, EventClosestSeReply, EventClosestSeRequest
 
 from modules.forwardingmodule.forwardingEvents import EventForwardingPipeline, EventShortestPathRequest, EventShortestPathReply
 from modules.forwardingmodule.models import Path
@@ -348,6 +348,12 @@ class CDNModule(app_manager.RyuApp):
                     self.shortestPathtoSefromIPCache.append((ip, node))
                     return node
         return None
+
+    @set_ev_cls(EventClosestSeRequest, None)
+    def get_closest_se_to_ip_public(self, ev):
+        ip = self.get_closest_se_to_ip(ev.ip)
+        reply = EventClosestSeReply(ip, ev.src)
+        self.reply_to_request(ev, reply)
 
     @set_ev_cls(TopologyEvent.EventHostAdd, MAIN_DISPATCHER)
     def _host_in_event(self, ev):

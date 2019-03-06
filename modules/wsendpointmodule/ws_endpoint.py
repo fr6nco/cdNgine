@@ -39,11 +39,27 @@ class WsCDNEndpoint(ControllerBase):
         return {'code': 404, 'res': 'rr not found'}
 
     @rpc_public
+    def getrrs(self):
+        self.logger.info('Requesting All Request Routers')
+        rrs = self.db.getData().getNodesByType('rr')
+        return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port'], 'domain': x['domain']}
+                                     for x in map(lambda y: y.serialize(), rrs)]}
+
+    @rpc_public
     def getses(self):
         self.logger.info('Request router requesting Service Engines')
         ses = self.db.getData().getNodesByType('se')
         return {'code': 200, 'res': [{'name': x['name'], 'ip': x['ip'], 'port': x['port'], 'domain': x['domain']}
                                      for x in map(lambda y: y.serialize(), ses)]}
+
+    @rpc_public
+    def getclosestse(self, ip):
+        self.logger.info('Requesting closest service engine for ip {}'.format(ip))
+        ip = self.db.getData().getClosestSeToIP(ip)
+        if ip:
+            return {'code': 200, 'res': ip}
+        else:
+            return {'code': 400, 'res': 'Service Engine not found'}
 
     @rpc_public
     def getmatchingsess(self, src_ip, src_port, dst_ip, dst_port):

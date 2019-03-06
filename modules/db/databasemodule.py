@@ -1,6 +1,7 @@
 from ryu.base import app_manager
 from modules.db.model import DatabaseModel
 from modules.forwardingmodule.forwardingEvents import EventTopologyReply, EventTopologyRequest
+from modules.cdnmodule.cdnEvents import EventClosestSeRequest, EventClosestSeReply
 
 import json
 from ryu import cfg
@@ -46,3 +47,10 @@ class DatabaseModule(app_manager.RyuApp):
         toporeq.sync = True
         reply = self.send_request(toporeq)  # type: EventTopologyReply
         return reply.topology
+
+    def getClosestSeToIP(self, ip):
+        closesereq = EventClosestSeRequest(ip)
+        closesereq.dst = 'CDNModule'
+        closesereq.sync = True
+        reply = self.send_request(closesereq)  # type: EventClosestSeReply
+        return reply.seip
