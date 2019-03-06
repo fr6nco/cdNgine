@@ -55,7 +55,7 @@ class WsCDNEndpoint(ControllerBase):
     @rpc_public
     def getclosestse(self, ip):
         self.logger.info('Requesting closest service engine for ip {}'.format(ip))
-        ip = self.db.getData().getClosestSeToIP(ip)
+        ip = self.db.getClosestSeToIP(ip)
         if ip:
             return {'code': 200, 'res': ip}
         else:
