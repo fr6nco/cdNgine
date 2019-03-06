@@ -57,10 +57,8 @@ class WsCDNEndpoint(ControllerBase):
         self.logger.info('Requesting closest service engine for ip {}'.format(ip))
         seip = self.db.getClosestSeToIP(ip)
         if seip:
-            self.logger.info('Closest se is {}'.format(seip))
             return {'code': 200, 'res': seip}
         else:
-            self.logger.error('Failed to get closest SE for ip {}'.format(ip))
             return {'code': 400, 'res': 'Service Engine not found'}
 
     @rpc_public
