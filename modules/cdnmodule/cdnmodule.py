@@ -407,7 +407,7 @@ class CDNModule(app_manager.RyuApp):
             # Remove TCP Timestamp and SACK permitted Option as it prevents the handover from working
             new_options = []
             for option in ptcp.option:  # type: tcp.TCPOption
-                if not option.kind in [tcp.TCP_OPTION_KIND_TIMESTAMPS, tcp.TCP_OPTION_KIND_SACK_PERMITTED]:
+                if not option.kind in [tcp.TCP_OPTION_KIND_TIMESTAMPS, tcp.TCP_OPTION_KIND_SACK_PERMITTED, tcp.TCP_OPTION_KIND_WINDOW_SCALE]:
                     new_options.append(option)
 
             new_ptcp = tcp.tcp(src_port=ptcp.src_port, dst_port=ptcp.dst_port, seq=ptcp.seq, ack=ptcp.ack,
