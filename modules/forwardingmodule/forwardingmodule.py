@@ -46,7 +46,10 @@ class ForwardingModule(app_manager.RyuApp):
                 help='FLow mod cookie to use for Controller event on arp'),
         cfg.IntOpt('priority',
                 default=1,
-                help='Priority to use to add the forwarding rules')
+                help='Priority to use to add the forwarding rules'),
+        cfg.BoolOpt('caching',
+                default='true',
+                help='Disables or enables caching of shortest paths and of paths')
     ]
 
     def __init__(self, *args, **kwargs):
@@ -58,6 +61,8 @@ class ForwardingModule(app_manager.RyuApp):
         self.ofHelper = ofprotoHelper.ofProtoHelperGeneric()
         self.installed_paths = []
         self.shortestPathCache = []
+        if CONF.forwarding.caching:
+            self.logger.info('Caching enabled')
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -91,18 +96,27 @@ class ForwardingModule(app_manager.RyuApp):
         :type path: Path
         :return:
         """
-
-        if (path.src_ip, path.dst_ip) not in self.installed_paths:
+        if CONF.forwarding.caching:
+            if (path.src_ip, path.dst_ip) not in self.installed_paths:
+                for rule in path.fw:
+                    if isinstance(rule['src'], int):
+                        self._add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
+                self.installed_paths.append((path.src_ip, path.dst_ip))
+        else:
             for rule in path.fw:
                 if isinstance(rule['src'], int):
                     self._add_forwarding_rule(self.switches.dps[rule['src']], path.src_ip, path.dst_ip, rule['port'])
-            self.installed_paths.append((path.src_ip, path.dst_ip))
 
-        if (path.dst_ip, path.src_ip) not in self.installed_paths:
+        if CONF.forwarding.caching:
+            if (path.dst_ip, path.src_ip) not in self.installed_paths:
+                for rule in path.bw:
+                    if isinstance(rule['src'], int):
+                        self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
+                self.installed_paths.append((path.dst_ip, path.src_ip))
+        else:
             for rule in path.bw:
                 if isinstance(rule['src'], int):
                     self._add_forwarding_rule(self.switches.dps[rule['src']], path.dst_ip, path.src_ip, rule['port'])
-            self.installed_paths.append((path.dst_ip, path.src_ip))
 
     def _get_topology(self):
         """
@@ -124,9 +138,11 @@ class ForwardingModule(app_manager.RyuApp):
         return g
 
     def _get_shortest_path(self, src_ip, dst_ip):
-        pathcache = dict(self.shortestPathCache)
-        if src_ip+'_'+dst_ip in pathcache:
-            return pathcache[src_ip+'_'+dst_ip]
+        if CONF.forwarding.caching:
+            pathcache = dict(self.shortestPathCache)
+            if src_ip+'_'+dst_ip in pathcache:
+                return pathcache[src_ip+'_'+dst_ip]
+
 
         g = self._get_topology()
 
@@ -151,7 +167,8 @@ class ForwardingModule(app_manager.RyuApp):
                 'port': edged['port'] if 'port' in edged else ''
             })
 
-        self.shortestPathCache.append((src_ip+'_'+dst_ip, path))
+        if CONF.forwarding.caching:
+            self.shortestPathCache.append((src_ip+'_'+dst_ip, path))
 
         return path
 

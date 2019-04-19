@@ -265,14 +265,12 @@ class CDNModule(app_manager.RyuApp):
         if pathres.path:
             # Rewrite DST IP and PORT from Client to RR -> SE on ACC switch in FW direction
             p = pathres.path.fw[1]  # 2nd entry on forwardp path
-            for id, dp in self.switches.dps.iteritems():  # type: Datapath
-                if id == p['src']:
-                    self._install_rewrite_dst_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.eth.dst, p['port'])
+            dp = self.switches.dps.get(p['src'])
+            self._install_rewrite_dst_action_out(dp, hsess.ip.src, hsess.ptcp.src_port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.eth.dst, p['port'])
 
             p = pathres.path.bw[0]  # 1st entry on backward path
-            for id, dp in self.switches.dps.iteritems():  # type: Datapath
-                if id == p['src']:
-                    self._install_rewrite_src_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.ip.src, hsess.ptcp.src_port, hsess.eth.dst, p['port'])
+            dp = self.switches.dps.get(p['src'])
+            self._install_rewrite_src_action_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, hsess.ip.dst, hsess.ptcp.dst_port, hsess.ip.src, hsess.ptcp.src_port, hsess.eth.dst, p['port'])
 
             ## Calculate seq ack diffs
             # Sinc_cs = ((2^32) + (Srs - Scr) + (Rrs - Rcr)) %% (2^32)
@@ -407,7 +405,7 @@ class CDNModule(app_manager.RyuApp):
             # Remove TCP Timestamp and SACK permitted Option as it prevents the handover from working
             new_options = []
             for option in ptcp.option:  # type: tcp.TCPOption
-                if not option.kind in [tcp.TCP_OPTION_KIND_TIMESTAMPS, tcp.TCP_OPTION_KIND_SACK_PERMITTED, tcp.TCP_OPTION_KIND_WINDOW_SCALE]:
+                if not option.kind in [tcp.TCP_OPTION_KIND_TIMESTAMPS, tcp.TCP_OPTION_KIND_SACK_PERMITTED]:
                     new_options.append(option)
 
             new_ptcp = tcp.tcp(src_port=ptcp.src_port, dst_port=ptcp.dst_port, seq=ptcp.seq, ack=ptcp.ack,
