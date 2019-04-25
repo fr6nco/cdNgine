@@ -219,9 +219,8 @@ class CDNModule(app_manager.RyuApp):
             node.setMitigateCallback(self.mitigatecb)
 
     def mitigatecb(self, datapath_id, src_ip, dst_ip, src_port, dst_port):
-        for id, dp in self.switches.dps.iteritems():  # type: Datapath
-            if id == datapath_id:
-                self._mitigate_tcp_session(dp, src_ip, dst_ip, src_port, dst_port)
+        dp = self.switches.dps.get(datapath_id)
+        self._mitigate_tcp_session(dp, src_ip, dst_ip, src_port, dst_port)
 
     def rsttcpSessioncb(self, sess):
         hsess = sess.handoverPair
@@ -293,16 +292,14 @@ class CDNModule(app_manager.RyuApp):
             # Rewrite SRC IP and PORT from Client -> RR to SE and modify SEQ ACK on CR sw in FW direction
             # FM 4
             p = pathres.path.fw[-1]
-            for id, dp in self.switches.dps.iteritems():  # type: Datapath
-                if id == p['src']:
-                    self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, sess.eth.src, p['port'])
+            dp = self.switches.dps.get(p['src'])
+            self._install_rewrite_src_action_with_tcp_sa_out(dp, hsess.ip.src, hsess.ptcp.src_port, sess.ip.src, sess.ptcp.src_port, hsess.serviceEngine.ip, hsess.serviceEngine.port, seq_cs, ack_cs, sess.eth.src, p['port'])
 
             # Rewrite DST IP and PORT from SE to RR -> Client and modify SEQ ACK on CR sw in BW direction
             # FM 2
             p = pathres.path.bw[-2]
-            for id, dp in self.switches.dps.iteritems():  # type: Datapath
-                if id == p['src']:
-                    self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, hsess.eth.src, p['port'])
+            dp = self.switches.dps.get(p['src'])
+            self._install_rewrite_dst_action_with_tcp_sa_out(dp, hsess.serviceEngine.ip, hsess.serviceEngine.port, sess.ip.src, sess.ptcp.src_port, hsess.ip.src, hsess.ptcp.src_port, seq_sc, ack_sc, hsess.eth.src, p['port'])
 
             # Mitigate all corresponding communication from to request router
             self._mitigate_tcp_session(hsess.parentNode.datapath_obj, sess.ip.src, sess.ip.dst, sess.ptcp.src_port, sess.ptcp.dst_port)
