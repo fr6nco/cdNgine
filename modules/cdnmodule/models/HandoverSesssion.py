@@ -1,10 +1,10 @@
 from modules.cdnmodule.models.TCPSession import TCPSesssion
-# import threading
+import threading
 
 class HandoverSession(TCPSesssion):
     def __init__(self, pkt, eth, ip, ptcp, parentNode):
         self.serviceEngine = None
-        # self.event = threading.Event()
+        self.event = threading.Event()
         super(HandoverSession, self).__init__(pkt, eth, ip, ptcp, parentNode)
 
     def popDestinationSesssion(self):

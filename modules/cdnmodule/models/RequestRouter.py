@@ -49,7 +49,7 @@ class RequestRouter(Node):
             if se:
                 self.logger.info('We found a suitable SE to handover the session to')
                 sess.serviceEngine = se
-                # sess.event.set()
+                sess.event.set()
                 self.logger.info(se)
 
                 self.logger.info('Mitigating all corresponding communication from Request router to Client')
