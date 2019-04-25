@@ -38,8 +38,8 @@ class DatabaseModel(object):
                     if hsess.ip.src == src_ip and hsess.ptcp.src_port == src_port:
                         # This is required, because sometimes the data in threads are not synchronized
                         # and the SE won't be set even though it is set
-                        self.logger.info('Waiting for Event from Thread')
-                        res = hsess.event.wait()
+                        # self.logger.info('Waiting for Event from Thread')
+                        # res = hsess.event.wait()
                         sess = hsess.popDestinationSesssion()
                         return sess
         return None
